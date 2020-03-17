@@ -39,8 +39,8 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get install -yq \
 
 # Install the rust toolchain
 RUN nohup curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain "$RUST_TOOLCHAIN" \
-    && rustup component add rustfmt \
-    && rustup component add clippy \
+    && if [ $(uname -m) = "x86_64" ]; then rustup component add rustfmt; fi \
+    && if [ $(uname -m) = "x86_64" ]; then rustup component add clippy; fi \
     && cargo install cargo-audit \
     && rm -rf "$CARGO_HOME/registry" \
     && ln -s "$CARGO_REGISTRY_DIR" "$CARGO_HOME/registry" \
