@@ -3,6 +3,10 @@
 // Copyright 2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
+#![deny(missing_docs)]
+
+//! Implements platform specific functionality.
+//! Supported platforms: x86_64, aarch64.
 #![allow(
     clippy::unreadable_literal,
     clippy::redundant_static_lifetimes,
@@ -13,22 +17,28 @@
 
 extern crate byteorder;
 extern crate kvm_bindings;
+extern crate kvm_ioctls;
 extern crate libc;
+
+extern crate vm_memory;
 
 #[cfg(feature = "acpi")]
 extern crate acpi_tables;
 extern crate arch_gen;
-extern crate kvm_ioctls;
 extern crate linux_loader;
-extern crate vm_memory;
 
+use std::fmt;
 use std::result;
 
+/// Type for returning error code.
 #[derive(Debug)]
 pub enum Error {
     #[cfg(target_arch = "x86_64")]
     /// X86_64 specific error triggered during system configuration.
     X86_64Setup(x86_64::Error),
+    #[cfg(target_arch = "aarch64")]
+    /// aarch64 specific error triggered during system configuration.
+    Aarch64Setup(aarch64::Error),
     /// The zero page extends past the end of guest_mem.
     ZeroPagePastRamEnd,
     /// Error writing the zero page of guest memory.
@@ -42,8 +52,11 @@ pub enum Error {
     /// Error writing hvm_start_info to guest memory.
     StartInfoSetup,
 }
+
+/// Type for returning public functions outcome.
 pub type Result<T> = result::Result<T, Error>;
 
+/// Type for memory region types.
 #[derive(PartialEq)]
 pub enum RegionType {
     /// RAM type
@@ -62,13 +75,15 @@ pub enum RegionType {
     Reserved,
 }
 
+/// Module for aarch64 related functionality.
 #[cfg(target_arch = "aarch64")]
 pub mod aarch64;
 
 #[cfg(target_arch = "aarch64")]
 pub use aarch64::{
-    arch_memory_regions, configure_system, get_reserved_mem_addr, layout::CMDLINE_MAX_SIZE,
-    layout::CMDLINE_START,
+    arch_memory_regions, configure_system, get_kernel_start, get_reserved_mem_addr,
+    initrd_load_addr, layout::CMDLINE_MAX_SIZE, layout::CMDLINE_START, layout::IRQ_BASE,
+    layout::IRQ_MAX, MMIO_MEM_START,
 };
 
 #[cfg(target_arch = "x86_64")]
@@ -79,3 +94,33 @@ pub use x86_64::{
     arch_memory_regions, configure_system, layout, layout::CMDLINE_MAX_SIZE, layout::CMDLINE_START,
     BootProtocol, EntryPoint,
 };
+
+/// Types of devices that can get attached to this platform.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Copy)]
+pub enum DeviceType {
+    /// Device Type: Virtio.
+    Virtio(u32),
+    /// Device Type: Serial.
+    #[cfg(target_arch = "aarch64")]
+    Serial,
+    /// Device Type: RTC.
+    #[cfg(target_arch = "aarch64")]
+    RTC,
+}
+
+/// Type for passing information about the initrd in the guest memory.
+pub struct InitrdConfig {
+    /// Load address of initrd in guest memory
+    pub address: vm_memory::GuestAddress,
+    /// Size of initrd in guest memory
+    pub size: usize,
+}
+
+/// Default (smallest) memory page size for the supported architectures.
+pub const PAGE_SIZE: usize = 4096;
+
+impl fmt::Display for DeviceType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
