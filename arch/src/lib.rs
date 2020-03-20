@@ -3,8 +3,6 @@
 // Copyright 2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-#![deny(missing_docs)]
-
 //! Implements platform specific functionality.
 //! Supported platforms: x86_64, aarch64.
 #![allow(
@@ -82,8 +80,8 @@ pub mod aarch64;
 #[cfg(target_arch = "aarch64")]
 pub use aarch64::{
     arch_memory_regions, configure_system, get_kernel_start, get_reserved_mem_addr,
-    initrd_load_addr, layout::CMDLINE_MAX_SIZE, layout::CMDLINE_START, layout::IRQ_BASE,
-    layout::IRQ_MAX, MMIO_MEM_START,
+    initrd_load_addr, layout, layout::CMDLINE_MAX_SIZE, layout::CMDLINE_START, layout::IRQ_BASE,
+    layout::IRQ_MAX, BootProtocol, EntryPoint, MMIO_MEM_START,
 };
 
 #[cfg(target_arch = "x86_64")]

@@ -82,6 +82,12 @@ pub enum Error {
     SetUserMemoryRegion(kvm_ioctls::Error),
 }
 
+#[cfg(target_arch = "aarch64")]
+pub fn get_host_cpu_phys_bits() -> u8 {
+    0
+}
+
+#[cfg(target_arch = "x86_64")]
 pub fn get_host_cpu_phys_bits() -> u8 {
     use core::arch::x86_64;
     unsafe {

@@ -182,6 +182,7 @@ cmd_build() {
     cargo_args=("$@")
     [ $build = "release" ] && cargo_args+=("--release")
 
+	cp -f Cargo."$(uname -m)".toml Cargo.toml
     $DOCKER_RUNTIME run \
 	   --user "$(id -u):$(id -g)" \
 	   --workdir "$CTR_CLH_ROOT_DIR" \

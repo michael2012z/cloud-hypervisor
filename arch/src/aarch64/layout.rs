@@ -49,6 +49,8 @@
 //
 // Taken from (http://infocenter.arm.com/help/topic/com.arm.doc.den0001c/DEN0001C_principles_of_arm_memory_maps.pdf).
 
+use vm_memory::{GuestAddress, GuestUsize};
+
 /// Start of RAM on 64 bit ARM.
 pub const DRAM_MEM_START: u64 = 0x8000_0000; // 2 GB.
 /// The maximum addressable RAM address.
@@ -79,3 +81,35 @@ pub const IRQ_MAX: u32 = 159;
 
 /// Below this address will reside the GIC, above this address will reside the MMIO devices.
 pub const MAPPED_IO_START: u64 = (1 << 30); // 1 GB
+
+/// TOTO: just to comfort the compiler
+pub const IOAPIC_START: GuestAddress = GuestAddress(0xfec0_0000);
+/// TOTO: just to comfort the compiler
+pub const IOAPIC_SIZE: GuestUsize = 0x20;
+/// TOTO: just to comfort the compiler
+pub const APIC_START: GuestAddress = GuestAddress(0xfee0_0000);
+
+// ** 32-bit reserved area (start: 3GiB, length: 1GiB) **
+/// TOTO: just to comfort the compiler
+pub const MEM_32BIT_RESERVED_START: GuestAddress = GuestAddress(0xc000_0000);
+/// TOTO: just to comfort the compiler
+pub const MEM_32BIT_RESERVED_SIZE: GuestUsize = (1024 << 20);
+
+// == Fixed constants within the "32-bit reserved" range ==
+
+// Sub range: 32-bit PCI devices (start: 3GiB, length: 640Mib)
+/// TOTO: just to comfort the compiler
+pub const MEM_32BIT_DEVICES_START: GuestAddress = MEM_32BIT_RESERVED_START;
+/// TOTO: just to comfort the compiler
+pub const MEM_32BIT_DEVICES_SIZE: GuestUsize = (640 << 20);
+
+// PCI MMCONFIG space (start: after the device space, length: 256MiB)
+/// TOTO: just to comfort the compiler
+pub const PCI_MMCONFIG_START: GuestAddress =
+    GuestAddress(MEM_32BIT_DEVICES_START.0 + MEM_32BIT_DEVICES_SIZE);
+/// TOTO: just to comfort the compiler
+pub const PCI_MMCONFIG_SIZE: GuestUsize = (256 << 20);
+
+// ** 64-bit RAM start (start: 4GiB, length: varies) **
+/// TOTO: just to comfort the compiler
+pub const RAM_64BIT_START: GuestAddress = GuestAddress(0x1_0000_0000);

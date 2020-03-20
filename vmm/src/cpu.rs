@@ -17,6 +17,7 @@ use acpi_tables::{aml, aml::Aml, sdt::SDT};
 use arch::layout;
 use arch::EntryPoint;
 use devices::{ioapic, BusDevice};
+#[cfg(target_arch = "x86_64")]
 use kvm_bindings::CpuId;
 use kvm_ioctls::*;
 use libc::{c_void, siginfo_t};
@@ -27,12 +28,14 @@ use std::sync::{Arc, Barrier, Mutex};
 use std::thread;
 use std::{fmt, io, result};
 use vm_device::{Migratable, MigratableError, Pausable, Snapshotable};
-use vm_memory::{Address, GuestAddress, GuestAddressSpace, GuestMemoryAtomic, GuestMemoryMmap};
+#[cfg(target_arch = "x86_64")]
+use vm_memory::{Address, GuestAddressSpace};
+use vm_memory::{GuestAddress, GuestMemoryAtomic, GuestMemoryMmap};
 use vmm_sys_util::eventfd::EventFd;
 use vmm_sys_util::signal::{register_signal_handler, SIGRTMIN};
 
 // Debug I/O port
-#[cfg(target_arch = "x86_64")]
+/// TODO: TODO
 const DEBUG_IOPORT: u16 = 0x80;
 const DEBUG_IOPORT_PREFIX: &str = "Debug I/O port";
 
@@ -124,6 +127,7 @@ pub enum Error {
 }
 pub type Result<T> = result::Result<T, Error>;
 
+#[cfg(target_arch = "x86_64")]
 #[allow(dead_code)]
 #[derive(Copy, Clone)]
 enum CpuidReg {
@@ -133,6 +137,7 @@ enum CpuidReg {
     EDX,
 }
 
+#[cfg(target_arch = "x86_64")]
 pub struct CpuidPatch {
     pub function: u32,
     pub index: u32,
@@ -143,6 +148,7 @@ pub struct CpuidPatch {
     pub edx_bit: Option<u8>,
 }
 
+#[cfg(target_arch = "x86_64")]
 impl CpuidPatch {
     fn set_cpuid_reg(
         cpuid: &mut CpuId,
@@ -269,6 +275,7 @@ impl Vcpu {
         })
     }
 
+    #[cfg(target_arch = "x86_64")]
     /// Configures a x86_64 specific vcpu and should be called once per vcpu from the vcpu's thread.
     ///
     /// # Arguments
@@ -308,6 +315,22 @@ impl Vcpu {
             .map_err(Error::SREGSConfiguration)?;
         }
         arch::x86_64::interrupts::set_lint(&self.fd).map_err(Error::LocalIntConfiguration)?;
+        Ok(())
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    /// Configures a aarch64 specific vcpu and should be called once per vcpu from the vcpu's thread.
+    ///
+    /// # Arguments
+    ///
+    /// * `machine_config` - Specifies necessary info used for the CPUID configuration.
+    /// * `kernel_entry_point` - Kernel entry point address in guest memory and boot protocol used.
+    /// * `vm` - The virtual machine this vcpu will get attached to.
+    pub fn configure(
+        &mut self,
+        _kernel_entry_point: Option<EntryPoint>,
+        _vm_memory: &GuestMemoryAtomic<GuestMemoryMmap>,
+    ) -> Result<()> {
         Ok(())
     }
 
@@ -384,6 +407,7 @@ pub struct CpuManager {
     mmio_bus: Arc<devices::Bus>,
     ioapic: Option<Arc<Mutex<ioapic::Ioapic>>>,
     vm_memory: GuestMemoryAtomic<GuestMemoryMmap>,
+    #[cfg(target_arch = "x86_64")]
     cpuid: CpuId,
     fd: Arc<VmFd>,
     vcpus_kill_signalled: Arc<AtomicBool>,
@@ -505,7 +529,7 @@ impl CpuManager {
         device_manager: &Arc<Mutex<DeviceManager>>,
         guest_memory: GuestMemoryAtomic<GuestMemoryMmap>,
         fd: Arc<VmFd>,
-        cpuid: CpuId,
+        #[cfg(target_arch = "x86_64")] cpuid: CpuId,
         reset_evt: EventFd,
     ) -> Result<Arc<Mutex<CpuManager>>> {
         let mut vcpu_states = Vec::with_capacity(usize::from(max_vcpus));
@@ -519,6 +543,7 @@ impl CpuManager {
             mmio_bus: device_manager.mmio_bus().clone(),
             ioapic: device_manager.ioapic().clone(),
             vm_memory: guest_memory,
+            #[cfg(target_arch = "x86_64")]
             cpuid,
             fd,
             vcpus_kill_signalled: Arc::new(AtomicBool::new(false)),
@@ -579,6 +604,8 @@ impl CpuManager {
 
             let vcpu_kill = self.vcpu_states[usize::from(cpu_id)].kill.clone();
             let vm_memory = self.vm_memory.clone();
+
+            #[cfg(target_arch = "x86_64")]
             let cpuid = self.cpuid.clone();
 
             let handle = Some(
@@ -590,7 +617,12 @@ impl CpuManager {
                         register_signal_handler(SIGRTMIN(), handle_signal)
                             .expect("Failed to register vcpu signal handler");
 
+                        #[cfg(target_arch = "x86_64")]
                         vcpu.configure(entry_point, &vm_memory, cpuid)
+                            .expect("Failed to configure vCPU");
+
+                        #[cfg(target_arch = "aarch64")]
+                        vcpu.configure(entry_point, &vm_memory)
                             .expect("Failed to configure vCPU");
 
                         // Block until all CPUs are ready.

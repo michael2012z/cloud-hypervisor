@@ -12,13 +12,41 @@ pub mod layout;
 /// Logic for configuring aarch64 registers.
 pub mod regs;
 
-use std::cmp::min;
-use self::gic::GICDevice;
-use std::collections::HashMap;
-use std::ffi::CStr;
-use std::fmt::Debug;
+use linux_loader::loader::bootparam::setup_header;
 
-use vm_memory::{Address, GuestAddress, GuestMemory, GuestMemoryMmap};
+use crate::RegionType;
+use std::fmt::Debug;
+use vm_memory::{Address, GuestAddress, GuestMemory, GuestMemoryMmap, GuestUsize};
+
+// TODO -----------------------------------------
+#[derive(Debug, Copy, Clone)]
+/// X
+pub enum BootProtocol {
+    /// X
+    LinuxBoot,
+    /// X
+    PvhBoot,
+}
+
+impl ::std::fmt::Display for BootProtocol {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        match self {
+            BootProtocol::LinuxBoot => write!(f, "Linux 64-bit boot protocol"),
+            BootProtocol::PvhBoot => write!(f, "PVH boot protocol"),
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone)]
+/// Specifies the entry point address where the guest must start
+/// executing code, as well as which of the supported boot protocols
+/// is to be used to configure the guest initial state.
+pub struct EntryPoint {
+    /// Address in guest memory where the guest must start execution
+    pub entry_addr: GuestAddress,
+    /// Specifies which boot protocol to use
+    pub protocol: BootProtocol,
+}
 
 /// Errors thrown while configuring aarch64 system.
 #[derive(Debug)]
@@ -39,43 +67,34 @@ impl From<Error> for super::Error {
 pub const MMIO_MEM_START: u64 = layout::MAPPED_IO_START;
 
 pub use self::fdt::DeviceInfoForFDT;
-use crate::DeviceType;
 
-/// Returns a Vec of the valid memory addresses for aarch64.
-/// See [`layout`](layout) module for a drawing of the specific memory model for this platform.
-pub fn arch_memory_regions(size: usize) -> Vec<(GuestAddress, usize)> {
-    let dram_size = min(size as u64, layout::DRAM_MEM_MAX_SIZE) as usize;
-    vec![(GuestAddress(layout::DRAM_MEM_START), dram_size)]
+/// TODO: compiler comforter
+#[allow(unused_variables)]
+pub fn arch_memory_regions(size: GuestUsize) -> Vec<(GuestAddress, usize, RegionType)> {
+    let regions = Vec::new();
+
+    regions
 }
 
 /// Configures the system and should be called once per vm before starting vcpu threads.
-/// For aarch64, we only setup the FDT.
 ///
 /// # Arguments
 ///
 /// * `guest_mem` - The memory to be used by the guest.
-/// * `cmdline_cstring` - The kernel commandline.
-/// * `vcpu_mpidr` - Array of MPIDR register values per vcpu.
-/// * `device_info` - A hashmap containing the attached devices for building FDT device nodes.
-/// * `gic_device` - The GIC device.
-/// * `initrd` - Information about an optional initrd.
-pub fn configure_system<T: DeviceInfoForFDT + Clone + Debug>(
+/// * `cmdline_addr` - Address in `guest_mem` where the kernel command line was loaded.
+/// * `cmdline_size` - Size of the kernel command line in bytes including the null terminator.
+/// * `num_cpus` - Number of virtual CPUs the guest will have.
+#[allow(clippy::too_many_arguments)]
+#[allow(unused_variables)]
+pub fn configure_system(
     guest_mem: &GuestMemoryMmap,
-    cmdline_cstring: &CStr,
-    vcpu_mpidr: Vec<u64>,
-    device_info: Option<&HashMap<(DeviceType, String), T>>,
-    gic_device: &Box<dyn GICDevice>,
-    initrd: &Option<super::InitrdConfig>,
+    cmdline_addr: GuestAddress,
+    cmdline_size: usize,
+    num_cpus: u8,
+    setup_hdr: Option<setup_header>,
+    rsdp_addr: Option<GuestAddress>,
+    boot_prot: BootProtocol,
 ) -> super::Result<()> {
-    fdt::create_fdt(
-        guest_mem,
-        vcpu_mpidr,
-        cmdline_cstring,
-        device_info,
-        gic_device,
-        initrd,
-    )
-    .map_err(Error::SetupFDT)?;
     Ok(())
 }
 

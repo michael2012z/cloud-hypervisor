@@ -51,3 +51,7 @@ RUN nohup curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -
 RUN echo 'source $CARGO_HOME/env' >> $HOME/.bashrc \
     && mkdir $HOME/.cargo \
     && ln -s $CARGO_HOME/env $HOME/.cargo/env
+
+RUN apt-get update
+RUN apt-get -yq upgrade
+RUN if [ $(uname -m) = "aarch64" ]; then DEBIAN_FRONTEND=noninteractive apt-get install -yq libfdt-dev; fi

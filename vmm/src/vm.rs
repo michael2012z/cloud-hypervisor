@@ -31,36 +31,49 @@ use crate::cpu;
 use crate::device_manager::{get_win_size, Console, DeviceManager, DeviceManagerError};
 use crate::memory_manager::{get_host_cpu_phys_bits, Error as MemoryManagerError, MemoryManager};
 use anyhow::anyhow;
-use arch::{layout, BootProtocol, EntryPoint};
+#[cfg(target_arch = "x86_64")]
+use arch::BootProtocol;
+use arch::{layout, EntryPoint};
 use devices::{ioapic, HotPlugNotificationFlags};
-use kvm_bindings::{kvm_enable_cap, kvm_userspace_memory_region, KVM_CAP_SPLIT_IRQCHIP};
+#[cfg(target_arch = "x86_64")]
+use kvm_bindings::kvm_userspace_memory_region;
+#[cfg(target_arch = "x86_64")]
+use kvm_bindings::{kvm_enable_cap, KVM_CAP_SPLIT_IRQCHIP};
 use kvm_ioctls::*;
+#[cfg(target_arch = "x86_64")]
 use linux_loader::cmdline::Cmdline;
+#[cfg(target_arch = "x86_64")]
 use linux_loader::loader::KernelLoader;
 use signal_hook::{iterator::Signals, SIGINT, SIGTERM, SIGWINCH};
+#[cfg(target_arch = "x86_64")]
 use std::ffi::CString;
 use std::fs::File;
 use std::io;
+#[cfg(target_arch = "x86_64")]
 use std::ops::Deref;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, RwLock};
 use std::{result, str, thread};
 use vm_allocator::{GsiApic, SystemAllocator};
 use vm_device::{Migratable, MigratableError, Pausable, Snapshotable};
+#[cfg(target_arch = "x86_64")]
 use vm_memory::{
-    Address, Bytes, GuestAddress, GuestAddressSpace, GuestMemory, GuestMemoryMmap,
-    GuestMemoryRegion, GuestUsize,
+    Address, Bytes, GuestAddressSpace, GuestMemory, GuestMemoryMmap, GuestMemoryRegion,
 };
+use vm_memory::{GuestAddress, GuestUsize};
 use vmm_sys_util::eventfd::EventFd;
 use vmm_sys_util::terminal::Terminal;
 
 const X86_64_IRQ_BASE: u32 = 5;
 
 // CPUID feature bits
+#[cfg(target_arch = "x86_64")]
 const TSC_DEADLINE_TIMER_ECX_BIT: u8 = 24; // tsc deadline timer ecx bit.
+#[cfg(target_arch = "x86_64")]
 const HYPERVISOR_ECX_BIT: u8 = 31; // Hypervisor ecx bit.
 
 // 64 bit direct boot entry offset for bzImage
+#[cfg(target_arch = "x86_64")]
 const KERNEL_64BIT_ENTRY_OFFSET: u64 = 0x200;
 
 /// Errors associated with VM management
@@ -243,9 +256,11 @@ impl Vm {
         if !kvm.check_extension(Cap::TscDeadlineTimer) {
             return Err(Error::CapabilityMissing(Cap::TscDeadlineTimer));
         }
-
-        if !kvm.check_extension(Cap::SplitIrqchip) {
-            return Err(Error::CapabilityMissing(Cap::SplitIrqchip));
+        #[cfg(target_arch = "x86_64")]
+        {
+            if !kvm.check_extension(Cap::SplitIrqchip) {
+                return Err(Error::CapabilityMissing(Cap::SplitIrqchip));
+            }
         }
 
         let kernel = File::open(&config.lock().unwrap().kernel.as_ref().unwrap().path)
@@ -271,19 +286,26 @@ impl Vm {
         let fd = Arc::new(fd);
 
         // Set TSS
+        #[cfg(target_arch = "x86_64")]
         fd.set_tss_address(arch::x86_64::layout::KVM_TSS_ADDRESS.raw_value() as usize)
             .map_err(Error::VmSetup)?;
 
+        #[cfg(target_arch = "x86_64")]
+        {
+            // Create split irqchip
+            // Only the local APIC is emulated in kernel, both PICs and IOAPIC
+            // are not.
+            let mut cap: kvm_enable_cap = Default::default();
+            cap.cap = KVM_CAP_SPLIT_IRQCHIP;
+            cap.args[0] = ioapic::NUM_IOAPIC_PINS as u64;
+            fd.enable_cap(&cap).map_err(Error::VmSetup)?;
+        }
+
+        #[cfg(target_arch = "x86_64")]
         let mut cpuid_patches = Vec::new();
-        // Create split irqchip
-        // Only the local APIC is emulated in kernel, both PICs and IOAPIC
-        // are not.
-        let mut cap: kvm_enable_cap = Default::default();
-        cap.cap = KVM_CAP_SPLIT_IRQCHIP;
-        cap.args[0] = ioapic::NUM_IOAPIC_PINS as u64;
-        fd.enable_cap(&cap).map_err(Error::VmSetup)?;
 
         // Patch tsc deadline timer bit
+        #[cfg(target_arch = "x86_64")]
         cpuid_patches.push(cpu::CpuidPatch {
             function: 1,
             index: 0,
@@ -295,6 +317,7 @@ impl Vm {
         });
 
         // Patch hypervisor bit
+        #[cfg(target_arch = "x86_64")]
         cpuid_patches.push(cpu::CpuidPatch {
             function: 1,
             index: 0,
@@ -306,10 +329,12 @@ impl Vm {
         });
 
         // Supported CPUID
+        #[cfg(target_arch = "x86_64")]
         let mut cpuid = kvm
             .get_supported_cpuid(kvm_bindings::KVM_MAX_CPUID_ENTRIES)
             .map_err(Error::VmSetup)?;
 
+        #[cfg(target_arch = "x86_64")]
         cpu::CpuidPatch::patch_cpuid(&mut cpuid, cpuid_patches);
 
         let ioapic = GsiApic::new(
@@ -366,6 +391,7 @@ impl Vm {
             &device_manager,
             guest_memory,
             fd,
+            #[cfg(target_arch = "x86_64")]
             cpuid,
             reset_evt,
         )
@@ -384,6 +410,13 @@ impl Vm {
         })
     }
 
+    #[cfg(target_arch = "aarch64")]
+    fn load_kernel(&mut self) -> Result<EntryPoint> {
+        println!("{:?}", self.kernel);
+        Err(Error::MemOverflow)
+    }
+
+    #[cfg(target_arch = "x86_64")]
     fn load_kernel(&mut self) -> Result<EntryPoint> {
         let mut cmdline = Cmdline::new(arch::CMDLINE_MAX_SIZE);
         cmdline
@@ -801,6 +834,7 @@ impl Migratable for Vm {}
 mod tests {
     use super::*;
 
+    #[cfg(target_arch = "x86_64")]
     fn test_vm_state_transitions(state: VmState) {
         match state {
             VmState::Created => {
@@ -835,27 +869,32 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_arch = "x86_64")]
     fn test_vm_created_transitions() {
         test_vm_state_transitions(VmState::Created);
     }
 
     #[test]
+    #[cfg(target_arch = "x86_64")]
     fn test_vm_running_transitions() {
         test_vm_state_transitions(VmState::Running);
     }
 
     #[test]
+    #[cfg(target_arch = "x86_64")]
     fn test_vm_shutdown_transitions() {
         test_vm_state_transitions(VmState::Shutdown);
     }
 
     #[test]
+    #[cfg(target_arch = "x86_64")]
     fn test_vm_paused_transitions() {
         test_vm_state_transitions(VmState::Paused);
     }
 }
 
 #[allow(unused)]
+#[cfg(target_arch = "x86_64")]
 pub fn test_vm() {
     // This example based on https://lwn.net/Articles/658511/
     let code = [
