@@ -33,7 +33,9 @@ use crate::memory_manager::{get_host_cpu_phys_bits, Error as MemoryManagerError,
 use anyhow::anyhow;
 use arch::BootProtocol;
 use arch::{layout, EntryPoint};
-use devices::{ioapic, HotPlugNotificationFlags};
+#[cfg(target_arch = "x86_64")]
+use devices::ioapic;
+use devices::HotPlugNotificationFlags;
 #[cfg(target_arch = "x86_64")]
 use kvm_bindings::kvm_userspace_memory_region;
 #[cfg(target_arch = "x86_64")]
@@ -51,7 +53,10 @@ use std::ops::Deref;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, RwLock};
 use std::{result, str, thread};
-use vm_allocator::{GsiApic, SystemAllocator};
+#[cfg(target_arch = "x86_64")]
+use vm_allocator::GsiApic;
+
+use vm_allocator::SystemAllocator;
 use vm_device::{Migratable, MigratableError, Pausable, Snapshotable};
 use vm_memory::GuestAddressSpace;
 #[cfg(target_arch = "x86_64")]
@@ -60,6 +65,7 @@ use vm_memory::{GuestAddress, GuestUsize};
 use vmm_sys_util::eventfd::EventFd;
 use vmm_sys_util::terminal::Terminal;
 
+#[cfg(target_arch = "x86_64")]
 const X86_64_IRQ_BASE: u32 = 5;
 
 // CPUID feature bits
@@ -333,6 +339,7 @@ impl Vm {
         #[cfg(target_arch = "x86_64")]
         cpu::CpuidPatch::patch_cpuid(&mut cpuid, cpuid_patches);
 
+        #[cfg(target_arch = "x86_64")]
         let ioapic = GsiApic::new(
             X86_64_IRQ_BASE,
             ioapic::NUM_IOAPIC_PINS as u32 - X86_64_IRQ_BASE,
@@ -347,6 +354,7 @@ impl Vm {
                 1 << get_host_cpu_phys_bits(),
                 layout::MEM_32BIT_RESERVED_START,
                 layout::MEM_32BIT_DEVICES_SIZE,
+                #[cfg(target_arch = "x86_64")]
                 vec![ioapic],
             )
             .ok_or(Error::CreateSystemAllocator)?,
