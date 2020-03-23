@@ -85,8 +85,8 @@ type Result<T> = result::Result<T, Error>;
 /// Creates the flattened device tree for this aarch64 microVM.
 pub fn create_fdt<T: DeviceInfoForFDT + Clone + Debug>(
     guest_mem: &GuestMemoryMmap,
-    vcpu_mpidr: Vec<u64>,
     cmdline: &CStr,
+    vcpu_mpidr: Vec<u64>,
     device_info: Option<&HashMap<(DeviceType, String), T>>,
     gic_device: &Box<dyn GICDevice>,
     initrd: &Option<InitrdConfig>,
@@ -531,26 +531,8 @@ mod tests {
     use crate::aarch64::gic::create_gic;
     use crate::aarch64::{arch_memory_regions, layout};
     use kvm_ioctls::Kvm;
+    use crate::MMIODeviceInfo;
 
-    const LEN: u64 = 4096;
-
-    #[derive(Clone, Debug)]
-    pub struct MMIODeviceInfo {
-        addr: u64,
-        irq: u32,
-    }
-
-    impl DeviceInfoForFDT for MMIODeviceInfo {
-        fn addr(&self) -> u64 {
-            self.addr
-        }
-        fn irq(&self) -> u32 {
-            self.irq
-        }
-        fn length(&self) -> u64 {
-            LEN
-        }
-    }
     // The `load` function from the `device_tree` will mistakenly check the actual size
     // of the buffer with the allocated size. This works around that.
     fn set_size(buf: &mut [u8], pos: usize, val: usize) {
@@ -573,14 +555,14 @@ mod tests {
             (
                 (DeviceType::Virtio(1), "virtio".to_string()),
                 MMIODeviceInfo {
-                    addr: 0x00 + LEN,
+                    addr: 0x00 + super::LEN,
                     irq: 2,
                 },
             ),
             (
                 (DeviceType::RTC, "rtc".to_string()),
                 MMIODeviceInfo {
-                    addr: 0x00 + 2 * LEN,
+                    addr: 0x00 + 2 * super::LEN,
                     irq: 3,
                 },
             ),
