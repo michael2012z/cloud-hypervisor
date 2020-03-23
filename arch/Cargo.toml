@@ -17,8 +17,9 @@ acpi_tables = { path = "../acpi_tables", optional = true }
 arch_gen = { path = "../arch_gen" }
 
 [dependencies.linux-loader]
-git = "https://github.com/rust-vmm/linux-loader"
-features = ["elf", "bzimage"]
+git = "https://github.com/michael2012z/linux-loader.git"
+branch = "crab2313-aarch64-image"
+features = ["elf", "bzimage", "pe"]
 
 [dev-dependencies]
 rand = "0.7.3"

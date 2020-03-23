@@ -12,8 +12,6 @@ pub mod layout;
 /// Logic for configuring aarch64 registers.
 pub mod regs;
 
-use linux_loader::loader::bootparam::setup_header;
-
 use crate::RegionType;
 use std::fmt::Debug;
 use vm_memory::{Address, GuestAddress, GuestMemory, GuestMemoryMmap, GuestUsize};
@@ -91,7 +89,6 @@ pub fn configure_system(
     cmdline_addr: GuestAddress,
     cmdline_size: usize,
     num_cpus: u8,
-    setup_hdr: Option<setup_header>,
     rsdp_addr: Option<GuestAddress>,
     boot_prot: BootProtocol,
 ) -> super::Result<()> {
