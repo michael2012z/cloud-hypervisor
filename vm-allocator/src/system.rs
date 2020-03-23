@@ -10,7 +10,9 @@
 use vm_memory::{GuestAddress, GuestUsize};
 
 use crate::address::AddressAllocator;
-use crate::gsi::{GsiAllocator, GsiApic};
+use crate::gsi::GsiAllocator;
+#[cfg(target_arch = "x86_64")]
+use crate::gsi::GsiApic;
 
 use libc::{sysconf, _SC_PAGESIZE};
 
@@ -61,13 +63,16 @@ impl SystemAllocator {
         mmio_size: GuestUsize,
         mmio_hole_base: GuestAddress,
         mmio_hole_size: GuestUsize,
-        apics: Vec<GsiApic>,
+        #[cfg(target_arch = "x86_64")] apics: Vec<GsiApic>,
     ) -> Option<Self> {
         Some(SystemAllocator {
             io_address_space: AddressAllocator::new(io_base, io_size)?,
             mmio_address_space: AddressAllocator::new(mmio_base, mmio_size)?,
             mmio_hole_address_space: AddressAllocator::new(mmio_hole_base, mmio_hole_size)?,
+            #[cfg(target_arch = "x86_64")]
             gsi_allocator: GsiAllocator::new(apics),
+            #[cfg(target_arch = "aarch64")]
+            gsi_allocator: GsiAllocator::new(),
         })
     }
 
