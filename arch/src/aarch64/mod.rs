@@ -79,17 +79,12 @@ pub fn arch_memory_regions(size: GuestUsize) -> Vec<(GuestAddress, usize, Region
 /// # Arguments
 ///
 /// * `guest_mem` - The memory to be used by the guest.
-/// * `cmdline_addr` - Address in `guest_mem` where the kernel command line was loaded.
-/// * `cmdline_size` - Size of the kernel command line in bytes including the null terminator.
 /// * `num_cpus` - Number of virtual CPUs the guest will have.
 #[allow(clippy::too_many_arguments)]
 #[allow(unused_variables)]
 pub fn configure_system(
     guest_mem: &GuestMemoryMmap,
-    cmdline_addr: GuestAddress,
-    cmdline_size: usize,
     num_cpus: u8,
-    rsdp_addr: Option<GuestAddress>,
     boot_prot: BootProtocol,
 ) -> super::Result<()> {
     Ok(())
