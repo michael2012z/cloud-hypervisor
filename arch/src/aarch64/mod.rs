@@ -12,6 +12,11 @@ pub mod layout;
 /// Logic for configuring aarch64 registers.
 pub mod regs;
 
+use std::cmp::min;
+use std::collections::HashMap;
+use std::ffi::CStr;
+use aarch64::gic::GICDevice;
+
 use crate::RegionType;
 use std::fmt::Debug;
 use vm_memory::{Address, GuestAddress, GuestMemory, GuestMemoryMmap, GuestUsize};
@@ -65,13 +70,13 @@ impl From<Error> for super::Error {
 pub const MMIO_MEM_START: u64 = layout::MAPPED_IO_START;
 
 pub use self::fdt::DeviceInfoForFDT;
+use crate::DeviceType;
 
-/// TODO: compiler comforter
-#[allow(unused_variables)]
+/// Returns a Vec of the valid memory addresses for aarch64.
+/// See [`layout`](layout) module for a drawing of the specific memory model for this platform.
 pub fn arch_memory_regions(size: GuestUsize) -> Vec<(GuestAddress, usize, RegionType)> {
-    let regions = Vec::new();
-
-    regions
+    let dram_size = min(size as u64, layout::DRAM_MEM_MAX_SIZE) as usize;
+    vec![(GuestAddress(layout::DRAM_MEM_START), dram_size, RegionType::Ram)]
 }
 
 /// Configures the system and should be called once per vm before starting vcpu threads.
@@ -82,11 +87,23 @@ pub fn arch_memory_regions(size: GuestUsize) -> Vec<(GuestAddress, usize, Region
 /// * `num_cpus` - Number of virtual CPUs the guest will have.
 #[allow(clippy::too_many_arguments)]
 #[allow(unused_variables)]
-pub fn configure_system(
+pub fn configure_system<T: DeviceInfoForFDT + Clone + Debug>(
     guest_mem: &GuestMemoryMmap,
-    num_cpus: u8,
-    boot_prot: BootProtocol,
+    cmdline_cstring: &CStr,
+    vcpu_mpidr: Vec<u64>,
+    device_info: Option<&HashMap<(DeviceType, String), T>>,
+    gic_device: &Box<dyn GICDevice>,
+    initrd: &Option<super::InitrdConfig>,
 ) -> super::Result<()> {
+     fdt::create_fdt(
+        guest_mem,
+        cmdline_cstring,
+        vcpu_mpidr,
+        device_info,
+        gic_device,
+        initrd,
+    )
+    .map_err(Error::SetupFDT)?;
     Ok(())
 }
 

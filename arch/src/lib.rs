@@ -79,9 +79,9 @@ pub mod aarch64;
 
 #[cfg(target_arch = "aarch64")]
 pub use aarch64::{
-    arch_memory_regions, configure_system, get_kernel_start, get_reserved_mem_addr,
-    initrd_load_addr, layout, layout::CMDLINE_MAX_SIZE, layout::CMDLINE_START, layout::IRQ_BASE,
-    layout::IRQ_MAX, BootProtocol, EntryPoint, MMIO_MEM_START,
+    arch_memory_regions, configure_system, fdt::DeviceInfoForFDT, get_kernel_start, 
+    get_reserved_mem_addr,initrd_load_addr, layout, layout::CMDLINE_MAX_SIZE, 
+    layout::CMDLINE_START, layout::IRQ_BASE,layout::IRQ_MAX, BootProtocol, EntryPoint, MMIO_MEM_START,
 };
 
 #[cfg(target_arch = "x86_64")]
@@ -120,5 +120,29 @@ pub const PAGE_SIZE: usize = 4096;
 impl fmt::Display for DeviceType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{:?}", self)
+    }
+}
+
+/// TODO--------------------- meaning to be determined-------
+pub const LEN: u64 = 4096;
+
+/// Structure to describe MMIO device information
+#[derive(Clone, Debug)]
+#[cfg(target_arch = "aarch64")]
+pub struct MMIODeviceInfo {
+    pub addr: u64,
+    pub irq: u32,
+}
+
+#[cfg(target_arch = "aarch64")]
+impl DeviceInfoForFDT for MMIODeviceInfo {
+    fn addr(&self) -> u64 {
+        self.addr
+    }
+    fn irq(&self) -> u32 {
+        self.irq
+    }
+    fn length(&self) -> u64 {
+        LEN
     }
 }
