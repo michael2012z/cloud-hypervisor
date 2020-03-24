@@ -23,6 +23,7 @@ use crate::memory_manager::{Error as MemoryManagerError, MemoryManager};
 use acpi_tables::{aml, aml::Aml};
 #[cfg(feature = "acpi")]
 use arch::layout;
+#[cfg(target_arch = "x86_64")]
 use arch::layout::{APIC_START, IOAPIC_SIZE, IOAPIC_START};
 use devices::{ioapic, BusDevice, HotPlugNotificationFlags};
 use kvm_ioctls::*;
@@ -540,7 +541,10 @@ impl DeviceManager {
     ) -> DeviceManagerResult<Arc<Mutex<Self>>> {
         let mut virtio_devices: Vec<(Arc<Mutex<dyn vm_virtio::VirtioDevice>>, bool)> = Vec::new();
         let migratable_devices: Vec<Arc<Mutex<dyn Migratable>>> = Vec::new();
+        #[cfg(target_arch = "x86_64")]
         let mut bus_devices: Vec<Arc<Mutex<dyn BusDevice>>> = Vec::new();
+        #[cfg(target_arch = "aarch64")]
+        let bus_devices: Vec<Arc<Mutex<dyn BusDevice>>> = Vec::new();
         let mut _mmap_regions = Vec::new();
 
         #[allow(unused_mut)]
@@ -573,8 +577,12 @@ impl DeviceManager {
                 Arc::clone(&kvm_gsi_msi_routes),
             ));
 
-        let ioapic =
-            DeviceManager::add_ioapic(&address_manager, Arc::clone(&msi_interrupt_manager))?;
+        let ioapic = DeviceManager::add_ioapic(
+            #[cfg(target_arch = "x86_64")]
+            &address_manager,
+            Arc::clone(&msi_interrupt_manager),
+        )?;
+        #[cfg(target_arch = "x86_64")]
         bus_devices.push(Arc::clone(&ioapic) as Arc<Mutex<dyn BusDevice>>);
 
         // Now we can create the legacy interrupt manager, which needs the freshly
@@ -793,15 +801,21 @@ impl DeviceManager {
     }
 
     fn add_ioapic(
-        address_manager: &Arc<AddressManager>,
+        #[cfg(target_arch = "x86_64")] address_manager: &Arc<AddressManager>,
         interrupt_manager: Arc<dyn InterruptManager<GroupConfig = MsiIrqGroupConfig>>,
     ) -> DeviceManagerResult<Arc<Mutex<ioapic::Ioapic>>> {
         // Create IOAPIC
+        #[cfg(target_arch = "x86_64")]
         let ioapic = Arc::new(Mutex::new(
             ioapic::Ioapic::new(APIC_START, interrupt_manager)
                 .map_err(DeviceManagerError::CreateIoapic)?,
         ));
+        #[cfg(target_arch = "aarch64")]
+        let ioapic = Arc::new(Mutex::new(
+            ioapic::Ioapic::new(interrupt_manager).map_err(DeviceManagerError::CreateIoapic)?,
+        ));
 
+        #[cfg(target_arch = "x86_64")]
         address_manager
             .mmio_bus
             .insert(ioapic.clone(), IOAPIC_START.0, IOAPIC_SIZE)

@@ -360,11 +360,22 @@ impl Vcpu {
                     self.mmio_bus.write(addr as u64, data);
                     Ok(true)
                 }
+                #[cfg(target_arch = "x86_64")]
                 VcpuExit::IoapicEoi(vector) => {
                     if let Some(ioapic) = &self.ioapic {
                         ioapic.lock().unwrap().end_of_interrupt(vector);
                     }
                     Ok(true)
+                }
+                #[cfg(target_arch = "aarch64")]
+                VcpuExit::IoapicEoi(vector) => {
+                    use std::mem;
+                    if let Some(ioapic) = &self.ioapic {
+                        // A meaningless workaround for warnings in build.
+                        error!("{} {}.", vector, mem::size_of_val(ioapic));
+                    }
+                    error!("This should never happen: {}.", vector);
+                    Err(Error::VcpuUnhandledKvmExit)
                 }
                 VcpuExit::Shutdown => {
                     // Triple fault to trigger a reboot

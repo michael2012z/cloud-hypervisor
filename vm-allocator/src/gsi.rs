@@ -92,8 +92,11 @@ impl GsiAllocator {
 #[cfg(target_arch = "aarch64")]
 impl GsiAllocator {
     /// New GSI allocator
+    /// GSI starts from 32 for GICv2/3,
+    /// 32 irqs are reserved for legacy devices.
+    /// So the allocator should start from 32 + 32
     pub fn new() -> Self {
-        GsiAllocator { next_irq: 32 }
+        GsiAllocator { next_irq: 64 }
     }
 
     /// Allocate a GSI

@@ -9,15 +9,19 @@
 // Implementation of an intel 82093AA Input/Output Advanced Programmable Interrupt Controller
 // See https://pdos.csail.mit.edu/6.828/2016/readings/ia32/ioapic.pdf for a specification.
 
+#[cfg(target_arch = "x86_64")]
 use crate::BusDevice;
+#[cfg(target_arch = "x86_64")]
 use byteorder::{ByteOrder, LittleEndian};
 use std::io;
 use std::result;
 use std::sync::Arc;
 use vm_device::interrupt::{
-    InterruptIndex, InterruptManager, InterruptSourceConfig, InterruptSourceGroup,
-    MsiIrqGroupConfig, MsiIrqSourceConfig,
+    InterruptIndex, InterruptManager, InterruptSourceGroup, MsiIrqGroupConfig,
 };
+#[cfg(target_arch = "x86_64")]
+use vm_device::interrupt::{InterruptSourceConfig, MsiIrqSourceConfig};
+#[cfg(target_arch = "x86_64")]
 use vm_memory::GuestAddress;
 
 #[derive(Debug)]
@@ -60,38 +64,48 @@ type Result<T> = result::Result<T, Error>;
 // 11:    Destination Mode - R/W
 // 10-8:  Delivery Mode - R/W
 // 7-0:   Interrupt Vector - R/W
+#[cfg(target_arch = "x86_64")]
 pub type RedirectionTableEntry = u64;
-
+#[cfg(target_arch = "x86_64")]
 fn vector(entry: RedirectionTableEntry) -> u8 {
     (entry & 0xffu64) as u8
 }
+#[cfg(target_arch = "x86_64")]
 fn delivery_mode(entry: RedirectionTableEntry) -> u8 {
     ((entry >> 8) & 0x7u64) as u8
 }
+#[cfg(target_arch = "x86_64")]
 fn destination_mode(entry: RedirectionTableEntry) -> u8 {
     ((entry >> 11) & 0x1u64) as u8
 }
+#[cfg(target_arch = "x86_64")]
 fn remote_irr(entry: RedirectionTableEntry) -> u8 {
     ((entry >> 14) & 0x1u64) as u8
 }
+#[cfg(target_arch = "x86_64")]
 fn trigger_mode(entry: RedirectionTableEntry) -> u8 {
     ((entry >> 15) & 0x1u64) as u8
 }
+#[cfg(target_arch = "x86_64")]
 fn interrupt_mask(entry: RedirectionTableEntry) -> u8 {
     ((entry >> 16) & 0x1u64) as u8
 }
+#[cfg(target_arch = "x86_64")]
 fn destination_field_physical(entry: RedirectionTableEntry) -> u8 {
     ((entry >> 56) & 0xfu64) as u8
 }
+#[cfg(target_arch = "x86_64")]
 fn destination_field_logical(entry: RedirectionTableEntry) -> u8 {
     ((entry >> 56) & 0xffu64) as u8
 }
+#[cfg(target_arch = "x86_64")]
 fn set_delivery_status(entry: &mut RedirectionTableEntry, val: u8) {
     // Clear bit 12
     *entry &= 0xffff_ffff_ffff_efff;
     // Set it with the expected value
     *entry |= u64::from(val & 0x1) << 12;
 }
+#[cfg(target_arch = "x86_64")]
 fn set_remote_irr(entry: &mut RedirectionTableEntry, val: u8) {
     // Clear bit 14
     *entry &= 0xffff_ffff_ffff_bfff;
@@ -118,32 +132,52 @@ pub struct MsiMessage {
     pub data: u32,
 }
 
+#[cfg(target_arch = "x86_64")]
 pub const NUM_IOAPIC_PINS: usize = 24;
+
+// Reserve 32 IRQs (GSI 32 ~ 64) for legacy device.
+// GsiAllocator should allocate beyond this: from 64 on
+#[cfg(target_arch = "aarch64")]
+pub const NUM_LEGACY_COUNT: usize = 32;
+#[cfg(target_arch = "aarch64")]
+pub const NUM_GSI_OFFSET: usize = 32;
+
+#[cfg(target_arch = "x86_64")]
 const IOAPIC_VERSION_ID: u32 = 0x0017_0011;
 
 // Constants for IOAPIC direct register offset
+#[cfg(target_arch = "x86_64")]
 const IOAPIC_REG_ID: u8 = 0x00;
+#[cfg(target_arch = "x86_64")]
 const IOAPIC_REG_VERSION: u8 = 0x01;
+#[cfg(target_arch = "x86_64")]
 const IOAPIC_REG_ARBITRATION_ID: u8 = 0x02;
 
 // Register offsets
+#[cfg(target_arch = "x86_64")]
 const IOREGSEL_OFF: u8 = 0x0;
+#[cfg(target_arch = "x86_64")]
 const IOWIN_OFF: u8 = 0x10;
+#[cfg(target_arch = "x86_64")]
 const IOWIN_SCALE: u8 = 0x2;
+#[cfg(target_arch = "x86_64")]
 const REG_MAX_OFFSET: u8 = IOWIN_OFF + (NUM_IOAPIC_PINS as u8 * 2) - 1;
 
+#[cfg(target_arch = "x86_64")]
 #[repr(u8)]
 enum DestinationMode {
     Physical = 0,
     Logical = 1,
 }
 
+#[cfg(target_arch = "x86_64")]
 #[repr(u8)]
 enum TriggerMode {
     Edge = 0,
     Level = 1,
 }
 
+#[cfg(target_arch = "x86_64")]
 #[repr(u8)]
 enum DeliveryMode {
     Fixed = 0b000,
@@ -156,6 +190,7 @@ enum DeliveryMode {
     External = 0b111,
 }
 
+#[cfg(target_arch = "x86_64")]
 /// Given an offset that was read from/written to, return a tuple of the relevant IRQ and whether
 /// the offset refers to the high bits of that register.
 fn decode_irq_from_selector(selector: u8) -> (usize, bool) {
@@ -165,6 +200,7 @@ fn decode_irq_from_selector(selector: u8) -> (usize, bool) {
     )
 }
 
+#[cfg(target_arch = "x86_64")]
 pub struct Ioapic {
     id: u32,
     reg_sel: u32,
@@ -173,6 +209,12 @@ pub struct Ioapic {
     interrupt_source_group: Arc<Box<dyn InterruptSourceGroup>>,
 }
 
+#[cfg(target_arch = "aarch64")]
+pub struct Ioapic {
+    interrupt_source_group: Arc<Box<dyn InterruptSourceGroup>>,
+}
+
+#[cfg(target_arch = "x86_64")]
 impl BusDevice for Ioapic {
     fn read(&mut self, _base: u64, offset: u64, data: &mut [u8]) {
         assert!(data.len() == 4);
@@ -208,6 +250,40 @@ impl BusDevice for Ioapic {
     }
 }
 
+#[cfg(target_arch = "aarch64")]
+impl Ioapic {
+    pub fn new(
+        interrupt_manager: Arc<dyn InterruptManager<GroupConfig = MsiIrqGroupConfig>>,
+    ) -> Result<Ioapic> {
+        let interrupt_source_group = interrupt_manager
+            .create_group(MsiIrqGroupConfig {
+                base: NUM_GSI_OFFSET as InterruptIndex,
+                count: NUM_LEGACY_COUNT as InterruptIndex,
+            })
+            .map_err(Error::CreateInterruptSourceGroup)?;
+
+        interrupt_source_group
+            .enable()
+            .map_err(Error::EnableInterrupt)?;
+
+        Ok(Ioapic {
+            interrupt_source_group,
+        })
+    }
+
+    // This should be called anytime an interrupt needs to be injected into the
+    // running guest.
+    pub fn service_irq(&mut self, irq: usize) -> Result<()> {
+        self.interrupt_source_group
+            .trigger(irq as InterruptIndex)
+            .map_err(Error::TriggerInterrupt)?;
+        debug!("Interrupt successfully delivered");
+
+        Ok(())
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
 impl Ioapic {
     pub fn new(
         apic_address: GuestAddress,
