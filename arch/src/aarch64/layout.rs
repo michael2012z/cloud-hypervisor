@@ -1,53 +1,7 @@
 // Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//      ==== Address map in use in ARM development systems today ====
-//
-//              - 32-bit -              - 36-bit -          - 40-bit -
-//1024GB    +                   +                      +-------------------+     <- 40-bit
-//          |                                           | DRAM              |
-//          ~                   ~                       ~                   ~
-//          |                                           |                   |
-//          |                                           |                   |
-//          |                                           |                   |
-//          |                                           |                   |
-//544GB     +                   +                       +-------------------+
-//          |                                           | Hole or DRAM      |
-//          |                                           |                   |
-//512GB     +                   +                       +-------------------+
-//          |                                           |       Mapped      |
-//          |                                           |       I/O         |
-//          ~                   ~                       ~                   ~
-//          |                                           |                   |
-//256GB     +                   +                       +-------------------+
-//          |                                           |       Reserved    |
-//          ~                   ~                       ~                   ~
-//          |                                           |                   |
-//64GB      +                   +-----------------------+-------------------+   <- 36-bit
-//          |                   |                   DRAM                    |
-//          ~                   ~                   ~                       ~
-//          |                   |                                           |
-//          |                   |                                           |
-//34GB      +                   +-----------------------+-------------------+
-//          |                   |                  Hole or DRAM             |
-//32GB      +                   +-----------------------+-------------------+
-//          |                   |                   Mapped I/O              |
-//          ~                   ~                       ~                   ~
-//          |                   |                                           |
-//16GB      +                   +-----------------------+-------------------+
-//          |                   |                   Reserved                |
-//          ~                   ~                       ~                   ~
-//4GB       +-------------------+-----------------------+-------------------+   <- 32-bit
-//          |           2GB of DRAM                                         |
-//          |                                                               |
-//2GB       +-------------------+-----------------------+-------------------+
-//          |                           Mapped I/O                          |
-//1GB       +-------------------+-----------------------+-------------------+
-//          |                          ROM & RAM & I/O                      |
-//0GB       +-------------------+-----------------------+-------------------+   0
-//              - 32-bit -              - 36-bit -              - 40-bit -
-//
-// Taken from (http://infocenter.arm.com/help/topic/com.arm.doc.den0001c/DEN0001C_principles_of_arm_memory_maps.pdf).
+// Reference for memory layout: http://infocenter.arm.com/help/topic/com.arm.doc.den0001c/DEN0001C_principles_of_arm_memory_maps.pdf.
 
 use vm_memory::{GuestAddress, GuestUsize};
 
@@ -80,8 +34,34 @@ pub const IRQ_BASE: u32 = 32;
 pub const IRQ_MAX: u32 = 159;
 
 /// Below this address will reside the GIC, above this address will reside the MMIO devices.
-pub const MAPPED_IO_START: u64 = (1 << 30); // 1 GB
+pub const MAPPED_IO_START: u64 = 0x4000_0000; // 1 GB
 
+/// NOTE: above layout configuration is reused from Firecracker.
+// ** 32-bit reserved area (start: 1GiB, length: 1GiB) **
+pub const MEM_32BIT_RESERVED_START: GuestAddress = GuestAddress(MAPPED_IO_START);
+pub const MEM_32BIT_RESERVED_SIZE: GuestUsize = (1024 << 20);
+
+// == Fixed constants within the "32-bit reserved" range ==
+
+// Sub range: 32-bit PCI devices (start: 3GiB, length: 640Mib)
+pub const MEM_32BIT_DEVICES_START: GuestAddress = MEM_32BIT_RESERVED_START;
+pub const MEM_32BIT_DEVICES_SIZE: GuestUsize = (640 << 20);
+
+// PCI MMCONFIG space (start: after the device space, length: 256MiB)
+pub const PCI_MMCONFIG_START: GuestAddress =
+    GuestAddress(MEM_32BIT_DEVICES_START.0 + MEM_32BIT_DEVICES_SIZE);
+pub const PCI_MMCONFIG_SIZE: GuestUsize = (256 << 20);
+
+// TODO: This is only a temp solution in prototype.
+// The address should be allocated from the allocator.
+// The MMIO allocator need to be updated to cover more MMIO allocation besides
+// PCI-transport virtio devices.
+pub const SERIAL_DEVICE_MMIO_START: u64 = PCI_MMCONFIG_START.0 + PCI_MMCONFIG_SIZE;
+
+// BAD NAME for aarch64. We uses this for the start of DRAM
+pub const RAM_64BIT_START: GuestAddress = GuestAddress(0x8000_0000);
+
+/*
 /// TOTO: just to comfort the compiler
 pub const IOAPIC_START: GuestAddress = GuestAddress(0xfec0_0000);
 /// TOTO: just to comfort the compiler
@@ -113,3 +93,4 @@ pub const PCI_MMCONFIG_SIZE: GuestUsize = (256 << 20);
 // ** 64-bit RAM start (start: 4GiB, length: varies) **
 /// TOTO: just to comfort the compiler
 pub const RAM_64BIT_START: GuestAddress = GuestAddress(0x1_0000_0000);
+*/
