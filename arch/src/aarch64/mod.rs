@@ -12,10 +12,10 @@ pub mod layout;
 /// Logic for configuring aarch64 registers.
 pub mod regs;
 
+use aarch64::gic::GICDevice;
 use std::cmp::min;
 use std::collections::HashMap;
 use std::ffi::CStr;
-use aarch64::gic::GICDevice;
 
 use crate::RegionType;
 use std::fmt::Debug;
@@ -72,11 +72,47 @@ pub const MMIO_MEM_START: u64 = layout::MAPPED_IO_START;
 pub use self::fdt::DeviceInfoForFDT;
 use crate::DeviceType;
 
-/// Returns a Vec of the valid memory addresses for aarch64.
-/// See [`layout`](layout) module for a drawing of the specific memory model for this platform.
 pub fn arch_memory_regions(size: GuestUsize) -> Vec<(GuestAddress, usize, RegionType)> {
-    let dram_size = min(size as u64, layout::DRAM_MEM_MAX_SIZE) as usize;
-    vec![(GuestAddress(layout::DRAM_MEM_START), dram_size, RegionType::Ram)]
+    let reserved_memory_gap_start = layout::MEM_32BIT_RESERVED_START
+        .checked_add(layout::MEM_32BIT_DEVICES_SIZE)
+        .expect("32-bit reserved region is too large");
+
+    let requested_memory_size = GuestAddress(size as u64);
+    let mut regions = Vec::new();
+
+    // case1: guest memory fits before the gap
+    if size as u64 <= layout::MEM_32BIT_RESERVED_START.raw_value() {
+        regions.push((GuestAddress(0), size as usize, RegionType::Ram));
+    // case2: guest memory extends beyond the gap
+    } else {
+        // push memory before the gap
+        regions.push((
+            GuestAddress(0),
+            layout::MEM_32BIT_RESERVED_START.raw_value() as usize,
+            RegionType::Ram,
+        ));
+        regions.push((
+            layout::RAM_64BIT_START,
+            requested_memory_size.unchecked_offset_from(layout::MEM_32BIT_RESERVED_START) as usize,
+            RegionType::Ram,
+        ));
+    }
+
+    // Add the 32-bit device memory hole as a sub region.
+    regions.push((
+        layout::MEM_32BIT_RESERVED_START,
+        layout::MEM_32BIT_DEVICES_SIZE as usize,
+        RegionType::SubRegion,
+    ));
+
+    // Add the 32-bit reserved memory hole as a sub region.
+    regions.push((
+        reserved_memory_gap_start,
+        (layout::MEM_32BIT_RESERVED_SIZE - layout::MEM_32BIT_DEVICES_SIZE) as usize,
+        RegionType::Reserved,
+    ));
+
+    regions
 }
 
 /// Configures the system and should be called once per vm before starting vcpu threads.
@@ -95,7 +131,7 @@ pub fn configure_system<T: DeviceInfoForFDT + Clone + Debug>(
     gic_device: &Box<dyn GICDevice>,
     initrd: &Option<super::InitrdConfig>,
 ) -> super::Result<()> {
-     fdt::create_fdt(
+    fdt::create_fdt(
         guest_mem,
         cmdline_cstring,
         vcpu_mpidr,

@@ -68,13 +68,10 @@ use std::{result, str, thread};
 use vm_allocator::GsiApic;
 use vm_allocator::SystemAllocator;
 use vm_device::{Migratable, MigratableError, Pausable, Snapshotable};
+use vm_memory::GuestAddress;
 use vm_memory::GuestAddressSpace;
 #[cfg(target_arch = "x86_64")]
-use vm_memory::{Address, Bytes, GuestMemory, GuestMemoryMmap, GuestMemoryRegion};
-// Import related with the commented initrd interfaces, to be open in the future.
-//#[cfg(target_arch = "aarch64")]
-//use vm_memory::{Bytes, GuestMemoryMmap};
-use vm_memory::{GuestAddress, GuestUsize};
+use vm_memory::{Address, Bytes, GuestMemory, GuestMemoryMmap, GuestMemoryRegion, GuestUsize};
 use vmm_sys_util::eventfd::EventFd;
 use vmm_sys_util::terminal::Terminal;
 
@@ -306,7 +303,7 @@ impl Vm {
             }
             break;
         }
-        
+
         let fd = Arc::new(fd);
 
         // Set TSS
@@ -368,10 +365,24 @@ impl Vm {
         );
 
         // Let's allocate 64 GiB of addressable MMIO space, starting at 0.
+        #[cfg(target_arch = "x86_64")]
         let allocator = Arc::new(Mutex::new(
             SystemAllocator::new(
                 GuestAddress(0),
                 1 << 16 as GuestUsize,
+                GuestAddress(0),
+                1 << get_host_cpu_phys_bits(),
+                layout::MEM_32BIT_RESERVED_START,
+                layout::MEM_32BIT_DEVICES_SIZE,
+                #[cfg(target_arch = "x86_64")]
+                vec![ioapic],
+            )
+            .ok_or(Error::CreateSystemAllocator)?,
+        ));
+
+        #[cfg(target_arch = "aarch64")]
+        let allocator = Arc::new(Mutex::new(
+            SystemAllocator::new(
                 GuestAddress(0),
                 1 << get_host_cpu_phys_bits(),
                 layout::MEM_32BIT_RESERVED_START,
@@ -473,7 +484,7 @@ impl Vm {
             protocol: boot_prot,
         })
     }
-    
+
     // Some initrd interfaces to be used in the future integration with real initrd.
     /*
     #[cfg(target_arch = "aarch64")]
@@ -602,7 +613,7 @@ impl Vm {
             &Some(dummy_initrd),
         )
         .map_err(Error::ConfigureSystem)?;
-        
+
         Ok(())
     }
 

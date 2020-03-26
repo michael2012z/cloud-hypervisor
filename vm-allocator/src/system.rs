@@ -41,6 +41,7 @@ fn pagesize() -> usize {
 ///
 /// ```
 pub struct SystemAllocator {
+    #[cfg(target_arch = "x86_64")]
     io_address_space: AddressAllocator,
     mmio_address_space: AddressAllocator,
     mmio_hole_address_space: AddressAllocator,
@@ -57,8 +58,8 @@ impl SystemAllocator {
     /// * `mmio_size` - The size of MMIO memory.
     /// * `first_irq` - The first irq number to give out.
     pub fn new(
-        io_base: GuestAddress,
-        io_size: GuestUsize,
+        #[cfg(target_arch = "x86_64")] io_base: GuestAddress,
+        #[cfg(target_arch = "x86_64")] io_size: GuestUsize,
         mmio_base: GuestAddress,
         mmio_size: GuestUsize,
         mmio_hole_base: GuestAddress,
@@ -66,6 +67,7 @@ impl SystemAllocator {
         #[cfg(target_arch = "x86_64")] apics: Vec<GsiApic>,
     ) -> Option<Self> {
         Some(SystemAllocator {
+            #[cfg(target_arch = "x86_64")]
             io_address_space: AddressAllocator::new(io_base, io_size)?,
             mmio_address_space: AddressAllocator::new(mmio_base, mmio_size)?,
             mmio_hole_address_space: AddressAllocator::new(mmio_hole_base, mmio_hole_size)?,
@@ -86,6 +88,7 @@ impl SystemAllocator {
         self.gsi_allocator.allocate_gsi().ok()
     }
 
+    #[cfg(target_arch = "x86_64")]
     /// Reserves a section of `size` bytes of IO address space.
     pub fn allocate_io_addresses(
         &mut self,
@@ -125,6 +128,7 @@ impl SystemAllocator {
         )
     }
 
+    #[cfg(target_arch = "x86_64")]
     /// Free an IO address range.
     /// We can only free a range if it matches exactly an already allocated range.
     pub fn free_io_addresses(&mut self, address: GuestAddress, size: GuestUsize) {

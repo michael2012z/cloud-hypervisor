@@ -66,7 +66,11 @@ use vm_virtio::{DmaRemapping, IommuMapping, VirtioIommuRemapping};
 use vm_virtio::{VirtioSharedMemory, VirtioSharedMemoryList};
 use vmm_sys_util::eventfd::EventFd;
 
+#[cfg(target_arch = "x86_64")]
 #[cfg(feature = "mmio_support")]
+const MMIO_LEN: u64 = 0x1000;
+
+#[cfg(target_arch = "aarch64")]
 const MMIO_LEN: u64 = 0x1000;
 
 #[cfg(feature = "pci_support")]
@@ -323,6 +327,7 @@ impl Console {
 
 struct AddressManager {
     allocator: Arc<Mutex<SystemAllocator>>,
+    #[cfg(target_arch = "x86_64")]
     io_bus: Arc<devices::Bus>,
     mmio_bus: Arc<devices::Bus>,
     vm_fd: Arc<VmFd>,
@@ -339,6 +344,11 @@ impl DeviceRelocation for AddressManager {
         region_type: PciBarRegionType,
     ) -> std::result::Result<(), std::io::Error> {
         match region_type {
+            #[cfg(target_arch = "aarch64")]
+            PciBarRegionType::IORegion => {
+                panic!("Impossible for aarch64.");
+            }
+            #[cfg(target_arch = "x86_64")]
             PciBarRegionType::IORegion => {
                 // Update system allocator
                 self.allocator
@@ -552,6 +562,7 @@ impl DeviceManager {
 
         let address_manager = Arc::new(AddressManager {
             allocator,
+            #[cfg(target_arch = "x86_64")]
             io_bus: Arc::new(devices::Bus::new()),
             mmio_bus: Arc::new(devices::Bus::new()),
             vm_fd: vm_fd.clone(),
@@ -752,10 +763,12 @@ impl DeviceManager {
             let pci_config_io = Arc::new(Mutex::new(PciConfigIo::new(Arc::clone(&pci_bus))));
             self.bus_devices
                 .push(Arc::clone(&pci_config_io) as Arc<Mutex<dyn BusDevice>>);
+            #[cfg(target_arch = "x86_64")]
             self.address_manager
                 .io_bus
                 .insert(pci_config_io, 0xcf8, 0x8)
                 .map_err(DeviceManagerError::BusError)?;
+
             let pci_config_mmio = Arc::new(Mutex::new(PciConfigMmio::new(Arc::clone(&pci_bus))));
             self.bus_devices
                 .push(Arc::clone(&pci_config_mmio) as Arc<Mutex<dyn BusDevice>>);
@@ -886,8 +899,10 @@ impl DeviceManager {
         Ok(Some(ged_device))
     }
 
+    #[cfg(target_arch = "x86_64")]
     fn add_legacy_devices(&mut self, reset_evt: EventFd) -> DeviceManagerResult<()> {
         // Add a shutdown device (i8042)
+        // TODO: check if we need to add i8042 back on arm
         let i8042 = Arc::new(Mutex::new(devices::legacy::I8042Device::new(reset_evt)));
 
         self.bus_devices
@@ -897,6 +912,44 @@ impl DeviceManager {
             .io_bus
             .insert(i8042, 0x61, 0x4)
             .map_err(DeviceManagerError::BusError)?;
+        #[cfg(feature = "cmos")]
+        {
+            // Add a CMOS emulated device
+            use vm_memory::GuestMemory;
+            let mem_size = self
+                .memory_manager
+                .lock()
+                .unwrap()
+                .guest_memory()
+                .memory()
+                .last_addr()
+                .0
+                + 1;
+            let mem_below_4g = std::cmp::min(arch::layout::MEM_32BIT_RESERVED_START.0, mem_size);
+            let mem_above_4g = mem_size.saturating_sub(arch::layout::RAM_64BIT_START.0);
+
+            let cmos = Arc::new(Mutex::new(devices::legacy::Cmos::new(
+                mem_below_4g,
+                mem_above_4g,
+            )));
+
+            self.bus_devices
+                .push(Arc::clone(&cmos) as Arc<Mutex<dyn BusDevice>>);
+
+            self.address_manager
+                .io_bus
+                .insert(cmos, 0x70, 0x2)
+                .map_err(DeviceManagerError::BusError)?;
+        }
+
+        Ok(())
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    fn add_legacy_devices(&mut self, _reset_evt: EventFd) -> DeviceManagerResult<()> {
+        // Add a shutdown device (i8042)
+        // TODO: check if we need to add i8042 back on arm
+
         #[cfg(feature = "cmos")]
         {
             // Add a CMOS emulated device
@@ -945,8 +998,18 @@ impl DeviceManager {
             ConsoleOutputMode::Off | ConsoleOutputMode::Null => None,
         };
         let serial = if serial_config.mode != ConsoleOutputMode::Off {
+            #[cfg(target_arch = "x86_64")]
             // Serial is tied to IRQ #4
             let serial_irq = 4;
+
+            #[cfg(target_arch = "aarch64")]
+            let serial_irq = self
+                .address_manager
+                .allocator
+                .lock()
+                .unwrap()
+                .allocate_irq()
+                .unwrap();
 
             let interrupt_group = interrupt_manager
                 .create_group(LegacyIrqGroupConfig {
@@ -962,6 +1025,17 @@ impl DeviceManager {
             self.bus_devices
                 .push(Arc::clone(&serial) as Arc<Mutex<dyn BusDevice>>);
 
+            #[cfg(target_arch = "aarch64")]
+            self.address_manager
+                .mmio_bus
+                .insert(
+                    serial.clone(),
+                    arch::layout::SERIAL_DEVICE_MMIO_START,
+                    MMIO_LEN,
+                )
+                .map_err(DeviceManagerError::BusError)?;
+
+            #[cfg(target_arch = "x86_64")]
             self.address_manager
                 .allocator
                 .lock()
@@ -969,6 +1043,7 @@ impl DeviceManager {
                 .allocate_io_addresses(Some(GuestAddress(0x3f8)), 0x8, None)
                 .ok_or(DeviceManagerError::AllocateIOPort)?;
 
+            #[cfg(target_arch = "x86_64")]
             self.address_manager
                 .io_bus
                 .insert(serial.clone(), 0x3f8, 0x8)
@@ -1586,6 +1661,7 @@ impl DeviceManager {
 
         pci.register_mapping(
             vfio_pci_device,
+            #[cfg(target_arch = "x86_64")]
             self.address_manager.io_bus.as_ref(),
             self.address_manager.mmio_bus.as_ref(),
             bars,
@@ -1718,6 +1794,7 @@ impl DeviceManager {
 
         pci.register_mapping(
             virtio_pci_device.clone(),
+            #[cfg(target_arch = "x86_64")]
             self.address_manager.io_bus.as_ref(),
             self.address_manager.mmio_bus.as_ref(),
             bars,
@@ -1786,6 +1863,7 @@ impl DeviceManager {
         Ok(())
     }
 
+    #[cfg(target_arch = "x86_64")]
     pub fn io_bus(&self) -> &Arc<devices::Bus> {
         &self.address_manager.io_bus
     }
@@ -1921,6 +1999,7 @@ impl DeviceManager {
                 .remove_by_device(&pci_device)
                 .map_err(DeviceManagerError::RemoveDeviceFromPciBus)?;
 
+            #[cfg(target_arch = "x86_64")]
             // Remove the device from the IO bus
             self.io_bus()
                 .remove_by_device(&bus_device)

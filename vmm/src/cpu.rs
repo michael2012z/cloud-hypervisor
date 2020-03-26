@@ -29,13 +29,14 @@ use std::thread;
 use std::{fmt, io, result};
 use vm_device::{Migratable, MigratableError, Pausable, Snapshotable};
 #[cfg(target_arch = "x86_64")]
-use vm_memory::{Address, GuestAddressSpace};
-use vm_memory::{GuestAddress, GuestMemoryAtomic, GuestMemoryMmap};
+use vm_memory::{Address, GuestAddress, GuestAddressSpace};
+use vm_memory::{GuestMemoryAtomic, GuestMemoryMmap};
 use vmm_sys_util::eventfd::EventFd;
 use vmm_sys_util::signal::{register_signal_handler, SIGRTMIN};
 
 // Debug I/O port
 /// TODO: TODO
+#[cfg(target_arch = "x86_64")]
 const DEBUG_IOPORT: u16 = 0x80;
 const DEBUG_IOPORT_PREFIX: &str = "Debug I/O port";
 
@@ -242,6 +243,7 @@ struct InterruptSourceOverride {
 pub struct Vcpu {
     fd: VcpuFd,
     id: u8,
+    #[cfg(target_arch = "x86_64")]
     io_bus: Arc<devices::Bus>,
     mmio_bus: Arc<devices::Bus>,
     ioapic: Option<Arc<Mutex<ioapic::Ioapic>>>,
@@ -258,7 +260,7 @@ impl Vcpu {
     pub fn new(
         id: u8,
         fd: &Arc<VmFd>,
-        io_bus: Arc<devices::Bus>,
+        #[cfg(target_arch = "x86_64")] io_bus: Arc<devices::Bus>,
         mmio_bus: Arc<devices::Bus>,
         ioapic: Option<Arc<Mutex<ioapic::Ioapic>>>,
         creation_ts: std::time::Instant,
@@ -268,6 +270,7 @@ impl Vcpu {
         Ok(Vcpu {
             fd: kvm_vcpu,
             id,
+            #[cfg(target_arch = "x86_64")]
             io_bus,
             mmio_bus,
             ioapic,
@@ -341,10 +344,33 @@ impl Vcpu {
     pub fn run(&self) -> Result<bool> {
         match self.fd.run() {
             Ok(run) => match run {
+                #[cfg(target_arch = "aarch64")]
+                VcpuExit::IoIn(addr, data) => {
+                    if 1 > 0 {
+                        panic!("Impossible for Aarch64: IoIn");
+                    }
+                    // following code is totally meaningless,
+                    // just to ease the build
+                    self.mmio_bus.read(addr as u64, data);
+                    Ok(true)
+                }
+                #[cfg(target_arch = "x86_64")]
                 VcpuExit::IoIn(addr, data) => {
                     self.io_bus.read(u64::from(addr), data);
                     Ok(true)
                 }
+                #[cfg(target_arch = "aarch64")]
+                VcpuExit::IoOut(addr, data) => {
+                    if 1 > 0 {
+                        panic!("Impossible for Aarch64: IoOut");
+                    }
+                    // following code is totally meaningless,
+                    // just to ease the build
+                    self.log_debug_ioport(data[0]);
+                    self.mmio_bus.write(addr as u64, data);
+                    Ok(true)
+                }
+                #[cfg(target_arch = "x86_64")]
                 VcpuExit::IoOut(addr, data) => {
                     if addr == DEBUG_IOPORT && data.len() == 1 {
                         self.log_debug_ioport(data[0]);
@@ -414,6 +440,7 @@ impl Vcpu {
 pub struct CpuManager {
     boot_vcpus: u8,
     max_vcpus: u8,
+    #[cfg(target_arch = "x86_64")]
     io_bus: Arc<devices::Bus>,
     mmio_bus: Arc<devices::Bus>,
     ioapic: Option<Arc<Mutex<ioapic::Ioapic>>>,
@@ -550,6 +577,7 @@ impl CpuManager {
         let cpu_manager = Arc::new(Mutex::new(CpuManager {
             boot_vcpus,
             max_vcpus,
+            #[cfg(target_arch = "x86_64")]
             io_bus: device_manager.io_bus().clone(),
             mmio_bus: device_manager.mmio_bus().clone(),
             ioapic: device_manager.ioapic().clone(),
@@ -564,6 +592,7 @@ impl CpuManager {
             selected_cpu: 0,
         }));
 
+        #[cfg(target_arch = "x86_64")]
         device_manager
             .allocator()
             .lock()
@@ -571,6 +600,7 @@ impl CpuManager {
             .allocate_io_addresses(Some(GuestAddress(0x0cd8)), 0x8, None)
             .ok_or(Error::AllocateIOPort)?;
 
+        #[cfg(target_arch = "x86_64")]
         cpu_manager
             .lock()
             .unwrap()
@@ -601,6 +631,7 @@ impl CpuManager {
             let mut vcpu = Vcpu::new(
                 cpu_id,
                 &self.fd,
+                #[cfg(target_arch = "x86_64")]
                 self.io_bus.clone(),
                 self.mmio_bus.clone(),
                 ioapic,
