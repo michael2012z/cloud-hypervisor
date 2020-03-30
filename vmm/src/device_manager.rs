@@ -70,6 +70,9 @@ use vm_virtio::{DmaRemapping, IommuMapping, VirtioIommuRemapping};
 use vm_virtio::{VirtioSharedMemory, VirtioSharedMemoryList};
 use vmm_sys_util::eventfd::EventFd;
 
+#[cfg(target_arch = "aarch64")]
+use arch::aarch64::gic::{self, GICDevice};
+
 #[cfg(target_arch = "x86_64")]
 #[cfg(feature = "mmio_support")]
 const MMIO_LEN: u64 = 0x1000;
@@ -267,6 +270,10 @@ pub enum DeviceManagerError {
 
     // No disk path was specified when one was expected
     NoDiskPath,
+
+    #[cfg(target_arch = "aarch64")]
+    /// Failed to setup GIC
+    SetupGIC(gic::Error),
 }
 pub type DeviceManagerResult<T> = result::Result<T, DeviceManagerError>;
 
@@ -565,6 +572,9 @@ pub struct DeviceManager {
 
     #[cfg(target_arch = "aarch64")]
     id_to_dev_info: HashMap<(DeviceType, String), MMIODeviceInfo>,
+
+    #[cfg(target_arch = "aarch64")]
+    irqchip: Option<Box<dyn GICDevice>>,
 }
 
 impl DeviceManager {
@@ -623,6 +633,8 @@ impl DeviceManager {
             #[cfg(target_arch = "x86_64")]
             &address_manager,
             Arc::clone(&msi_interrupt_manager),
+            #[cfg(target_arch = "aarch64")]
+            config.clone(),
         )?;
         #[cfg(target_arch = "x86_64")]
         bus_devices.push(Arc::clone(&ioapic) as Arc<Mutex<dyn BusDevice>>);
@@ -655,7 +667,7 @@ impl DeviceManager {
             cmdline_additions,
             #[cfg(feature = "acpi")]
             ged_notification_device: None,
-            config,
+            config: config.clone(),
             migratable_devices,
             memory_manager,
             virtio_devices: Vec::new(),
@@ -682,6 +694,8 @@ impl DeviceManager {
             pci_devices: HashMap::new(),
             #[cfg(target_arch = "aarch64")]
             id_to_dev_info,
+            #[cfg(target_arch = "aarch64")]
+            irqchip: None,
         };
 
         device_manager
@@ -737,6 +751,20 @@ impl DeviceManager {
     /// Gets the information of the devices registered up to some point in time.
     pub fn get_device_info(&self) -> &HashMap<(DeviceType, String), MMIODeviceInfo> {
         &self.id_to_dev_info
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    pub fn create_irqchip(&mut self, vcpu_count: u64) -> DeviceManagerResult<()> {
+        self.irqchip = Some(
+            arch::aarch64::gic::create_gic(&self.address_manager.vm_fd, vcpu_count)
+                .map_err(DeviceManagerError::SetupGIC)?,
+        );
+        Ok(())
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    pub fn get_irqchip(&self) -> &Box<dyn GICDevice> {
+        &self.irqchip.as_ref().unwrap()
     }
 
     #[allow(unused_variables)]
@@ -852,9 +880,18 @@ impl DeviceManager {
         Ok(())
     }
 
+    #[cfg(target_arch = "aarch64")]
+    pub fn enable_ioapic(&self) -> DeviceManagerResult<()> {
+        if let Some(ioapic) = &self.ioapic {
+            ioapic.lock().unwrap().enable().unwrap();
+        }
+        Ok(())
+    }
+
     fn add_ioapic(
         #[cfg(target_arch = "x86_64")] address_manager: &Arc<AddressManager>,
         interrupt_manager: Arc<dyn InterruptManager<GroupConfig = MsiIrqGroupConfig>>,
+        #[cfg(target_arch = "aarch64")] config: Arc<Mutex<VmConfig>>,
     ) -> DeviceManagerResult<Arc<Mutex<ioapic::Ioapic>>> {
         // Create IOAPIC
         #[cfg(target_arch = "x86_64")]
@@ -864,7 +901,8 @@ impl DeviceManager {
         ));
         #[cfg(target_arch = "aarch64")]
         let ioapic = Arc::new(Mutex::new(
-            ioapic::Ioapic::new(interrupt_manager).map_err(DeviceManagerError::CreateIoapic)?,
+            ioapic::Ioapic::new(config.lock().unwrap().cpus.boot_vcpus, interrupt_manager)
+                .map_err(DeviceManagerError::CreateIoapic)?,
         ));
 
         #[cfg(target_arch = "x86_64")]

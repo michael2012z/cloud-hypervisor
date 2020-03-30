@@ -16,6 +16,7 @@ pub mod regs;
 use crate::RegionType;
 use linux_loader::loader::bootparam::{boot_params, setup_header};
 use linux_loader::loader::start_info::{hvm_memmap_table_entry, hvm_start_info};
+use linux_loader::loader::KernelLoaderResult;
 use std::mem;
 use vm_memory::{
     Address, ByteValued, Bytes, GuestAddress, GuestMemory, GuestMemoryMmap, GuestUsize,
@@ -45,6 +46,7 @@ pub struct EntryPoint {
     pub entry_addr: GuestAddress,
     /// Specifies which boot protocol to use
     pub protocol: BootProtocol,
+    pub load_result: KernelLoaderResult,
 }
 
 const E820_RAM: u32 = 1;
