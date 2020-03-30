@@ -84,7 +84,7 @@ pub enum Error {
 
 #[cfg(target_arch = "aarch64")]
 pub fn get_host_cpu_phys_bits() -> u8 {
-    panic!("get_host_cpu_phys_bits() not implemented.");
+    48
 }
 
 #[cfg(target_arch = "x86_64")]
