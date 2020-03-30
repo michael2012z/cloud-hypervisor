@@ -19,7 +19,7 @@ pub enum Error {
 type Result<T> = result::Result<T, Error>;
 
 /// Trait for GIC devices.
-pub trait GICDevice {
+pub trait GICDevice: Send + Sync {
     /// Returns the file descriptor of the GIC device
     fn device_fd(&self) -> &DeviceFd;
 

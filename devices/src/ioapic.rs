@@ -44,6 +44,10 @@ pub enum Error {
     UpdateInterrupt(io::Error),
     /// Failed enabling the interrupt.
     EnableInterrupt(io::Error),
+    /*
+        /// Failed creating GIC.
+        SetupGIC,
+    */
 }
 
 type Result<T> = result::Result<T, Error>;
@@ -253,6 +257,7 @@ impl BusDevice for Ioapic {
 #[cfg(target_arch = "aarch64")]
 impl Ioapic {
     pub fn new(
+        _vcpu_count: u8,
         interrupt_manager: Arc<dyn InterruptManager<GroupConfig = MsiIrqGroupConfig>>,
     ) -> Result<Ioapic> {
         let interrupt_source_group = interrupt_manager
@@ -262,6 +267,7 @@ impl Ioapic {
             })
             .map_err(Error::CreateInterruptSourceGroup)?;
 
+        #[cfg(target_arch = "x86_64")]
         interrupt_source_group
             .enable()
             .map_err(Error::EnableInterrupt)?;
@@ -269,6 +275,15 @@ impl Ioapic {
         Ok(Ioapic {
             interrupt_source_group,
         })
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    pub fn enable(&self) -> Result<()> {
+        &self
+            .interrupt_source_group
+            .enable()
+            .map_err(Error::EnableInterrupt)?;
+        Ok(())
     }
 
     // This should be called anytime an interrupt needs to be injected into the

@@ -29,8 +29,8 @@ use std::thread;
 use std::{fmt, io, result};
 use vm_device::{Migratable, MigratableError, Pausable, Snapshotable};
 #[cfg(target_arch = "x86_64")]
-use vm_memory::{Address, GuestAddress, GuestAddressSpace};
-use vm_memory::{GuestMemoryAtomic, GuestMemoryMmap};
+use vm_memory::GuestAddress;
+use vm_memory::{Address, GuestAddressSpace, GuestMemoryAtomic, GuestMemoryMmap};
 use vmm_sys_util::eventfd::EventFd;
 use vmm_sys_util::signal::{register_signal_handler, SIGRTMIN};
 
@@ -125,6 +125,18 @@ pub enum Error {
 
     /// Asking for more vCPUs that we can have
     DesiredVCPUCountExceedsMax,
+
+    #[cfg(target_arch = "aarch64")]
+    /// Error fetching prefered target
+    VcpuArmPreferredTarget(kvm_ioctls::Error),
+
+    #[cfg(target_arch = "aarch64")]
+    /// Error doing Vcpu Init on Arm.
+    VcpuArmInit(kvm_ioctls::Error),
+
+    #[cfg(target_arch = "aarch64")]
+    /// Error configuring the general purpose aarch64 registers.
+    REGSConfiguration(arch::aarch64::regs::Error),
 }
 pub type Result<T> = result::Result<T, Error>;
 
@@ -248,6 +260,8 @@ pub struct Vcpu {
     mmio_bus: Arc<devices::Bus>,
     ioapic: Option<Arc<Mutex<ioapic::Ioapic>>>,
     vm_ts: std::time::Instant,
+    #[cfg(target_arch = "aarch64")]
+    mpidr: u64,
 }
 
 impl Vcpu {
@@ -259,13 +273,13 @@ impl Vcpu {
     /// * `vm` - The virtual machine this vcpu will get attached to.
     pub fn new(
         id: u8,
-        fd: &Arc<VmFd>,
+        vm_fd: &Arc<VmFd>,
         #[cfg(target_arch = "x86_64")] io_bus: Arc<devices::Bus>,
         mmio_bus: Arc<devices::Bus>,
         ioapic: Option<Arc<Mutex<ioapic::Ioapic>>>,
         creation_ts: std::time::Instant,
     ) -> Result<Self> {
-        let kvm_vcpu = fd.create_vcpu(id).map_err(Error::VcpuFd)?;
+        let kvm_vcpu = vm_fd.create_vcpu(id).map_err(Error::VcpuFd)?;
         // Initially the cpuid per vCPU is the one supported by this VM.
         Ok(Vcpu {
             fd: kvm_vcpu,
@@ -275,6 +289,8 @@ impl Vcpu {
             mmio_bus,
             ioapic,
             vm_ts: creation_ts,
+            #[cfg(target_arch = "aarch64")]
+            mpidr: 0,
         })
     }
 
@@ -288,6 +304,7 @@ impl Vcpu {
     /// * `vm` - The virtual machine this vcpu will get attached to.
     pub fn configure(
         &mut self,
+        _vm_fd: &VmFd,
         kernel_entry_point: Option<EntryPoint>,
         vm_memory: &GuestMemoryAtomic<GuestMemoryMmap>,
         cpuid: CpuId,
@@ -331,10 +348,43 @@ impl Vcpu {
     /// * `vm` - The virtual machine this vcpu will get attached to.
     pub fn configure(
         &mut self,
-        _kernel_entry_point: Option<EntryPoint>,
-        _vm_memory: &GuestMemoryAtomic<GuestMemoryMmap>,
+        vm_fd: &VmFd,
+        kernel_entry_point: Option<EntryPoint>,
+        vm_memory: &GuestMemoryAtomic<GuestMemoryMmap>,
     ) -> Result<()> {
+        let mut kvi: kvm_bindings::kvm_vcpu_init = kvm_bindings::kvm_vcpu_init::default();
+
+        // This reads back the kernel's preferred target type.
+        vm_fd
+            .get_preferred_target(&mut kvi)
+            .map_err(Error::VcpuArmPreferredTarget)?;
+        // We already checked that the capability is supported.
+        kvi.features[0] |= 1 << kvm_bindings::KVM_ARM_VCPU_PSCI_0_2;
+        // Non-boot cpus are powered off initially.
+        if self.id > 0 {
+            kvi.features[0] |= 1 << kvm_bindings::KVM_ARM_VCPU_POWER_OFF;
+        }
+
+        self.fd.vcpu_init(&kvi).map_err(Error::VcpuArmInit)?;
+        if let Some(kernel_entry_point) = kernel_entry_point {
+            arch::aarch64::regs::setup_regs(
+                &self.fd,
+                self.id,
+                kernel_entry_point.entry_addr.raw_value(),
+                &vm_memory.memory(),
+            )
+            .map_err(Error::REGSConfiguration)?;
+        }
+
+        self.mpidr = arch::aarch64::regs::read_mpidr(&self.fd).map_err(Error::REGSConfiguration)?;
+
         Ok(())
+    }
+
+    /// Gets the MPIDR register value.
+    #[cfg(target_arch = "aarch64")]
+    pub fn get_mpidr(&self) -> u64 {
+        self.mpidr
     }
 
     /// Runs the VCPU until it exits, returning the reason.
@@ -611,16 +661,13 @@ impl CpuManager {
         Ok(cpu_manager)
     }
 
-    fn activate_vcpus(&mut self, desired_vcpus: u8, entry_point: Option<EntryPoint>) -> Result<()> {
-        if desired_vcpus > self.max_vcpus {
-            return Err(Error::DesiredVCPUCountExceedsMax);
-        }
-
+    fn create_vcpus(
+        &mut self,
+        desired_vcpus: u8,
+        entry_point: Option<EntryPoint>,
+    ) -> Result<Vec<Vcpu>> {
+        let mut vcpus = Vec::with_capacity(desired_vcpus as usize);
         let creation_ts = std::time::Instant::now();
-        let vcpu_thread_barrier = Arc::new(Barrier::new(
-            (desired_vcpus - self.present_vcpus() + 1) as usize,
-        ));
-
         for cpu_id in self.present_vcpus()..desired_vcpus {
             let ioapic = if let Some(ioapic) = &self.ioapic {
                 Some(ioapic.clone())
@@ -638,6 +685,43 @@ impl CpuManager {
                 creation_ts,
             )?;
 
+            let vm_memory = self.vm_memory.clone();
+
+            #[cfg(target_arch = "x86_64")]
+            let cpuid = self.cpuid.clone();
+
+            #[cfg(target_arch = "x86_64")]
+            vcpu.configure(&self.fd, entry_point, &vm_memory, cpuid)
+                .expect("Failed to configure vCPU");
+
+            #[cfg(target_arch = "aarch64")]
+            vcpu.configure(&self.fd, entry_point, &vm_memory)
+                .expect("Failed to configure vCPU");
+
+            vcpus.push(vcpu);
+        }
+        Ok(vcpus)
+    }
+
+    fn activate_vcpus(
+        &mut self,
+        desired_vcpus: u8,
+        mut vcpus: Vec<Vcpu>,
+        entry_point: Option<EntryPoint>,
+    ) -> Result<()> {
+        if desired_vcpus > self.max_vcpus {
+            return Err(Error::DesiredVCPUCountExceedsMax);
+        }
+
+        let vcpu_thread_barrier = Arc::new(Barrier::new(
+            (desired_vcpus - self.present_vcpus() + 1) as usize,
+        ));
+
+        for cpu_id in self.present_vcpus()..desired_vcpus {
+            // TODO: NOTE, the vcpu will be passed to thread and never be used again.
+            //let vcpu: Vcpu = vcpus[usize::from(cpu_id)];
+            let vcpu: Vcpu = vcpus.remove(0);
+
             let vcpu_thread_barrier = vcpu_thread_barrier.clone();
 
             let reset_evt = self.reset_evt.try_clone().unwrap();
@@ -645,10 +729,6 @@ impl CpuManager {
             let vcpu_pause_signalled = self.vcpus_pause_signalled.clone();
 
             let vcpu_kill = self.vcpu_states[usize::from(cpu_id)].kill.clone();
-            let vm_memory = self.vm_memory.clone();
-
-            #[cfg(target_arch = "x86_64")]
-            let cpuid = self.cpuid.clone();
 
             let handle = Some(
                 thread::Builder::new()
@@ -658,14 +738,6 @@ impl CpuManager {
                         // This uses an async signal safe handler to kill the vcpu handles.
                         register_signal_handler(SIGRTMIN(), handle_signal)
                             .expect("Failed to register vcpu signal handler");
-
-                        #[cfg(target_arch = "x86_64")]
-                        vcpu.configure(entry_point, &vm_memory, cpuid)
-                            .expect("Failed to configure vCPU");
-
-                        #[cfg(target_arch = "aarch64")]
-                        vcpu.configure(entry_point, &vm_memory)
-                            .expect("Failed to configure vCPU");
 
                         // Block until all CPUs are ready.
                         vcpu_thread_barrier.wait();
@@ -734,14 +806,27 @@ impl CpuManager {
         Ok(())
     }
 
+    pub fn create_boot_vcpus(&mut self, entry_point: EntryPoint) -> Result<Vec<Vcpu>> {
+        self.create_vcpus(self.boot_vcpus(), Some(entry_point))
+    }
+
     // Starts all the vCPUs that the VM is booting with. Blocks until all vCPUs are running.
-    pub fn start_boot_vcpus(&mut self, entry_point: EntryPoint) -> Result<()> {
-        self.activate_vcpus(self.boot_vcpus(), Some(entry_point))
+    pub fn start_vcpus(
+        &mut self,
+        desired_vcpus: u8,
+        vcpus: Vec<Vcpu>,
+        entry_point: EntryPoint,
+    ) -> Result<()> {
+        self.activate_vcpus(desired_vcpus, vcpus, Some(entry_point))
     }
 
     pub fn resize(&mut self, desired_vcpus: u8) -> Result<bool> {
         match desired_vcpus.cmp(&self.present_vcpus()) {
-            cmp::Ordering::Greater => self.activate_vcpus(desired_vcpus, None).and(Ok(true)),
+            cmp::Ordering::Greater => {
+                let vcpus = self.create_vcpus(desired_vcpus, None).unwrap();
+                self.activate_vcpus(desired_vcpus, vcpus, None).unwrap();
+                Ok(true)
+            }
             cmp::Ordering::Less => self.mark_vcpus_for_removal(desired_vcpus).and(Ok(true)),
             _ => Ok(false),
         }
@@ -778,6 +863,12 @@ impl CpuManager {
         self.vcpu_states
             .iter()
             .fold(0, |acc, state| acc + state.active() as u8)
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    pub fn get_mpidr(&self, vcpus: &[Vcpu]) -> Vec<u64> {
+        let vcpu_mpidr = vcpus.into_iter().map(|cpu| cpu.get_mpidr()).collect();
+        vcpu_mpidr
     }
 
     #[cfg(feature = "acpi")]

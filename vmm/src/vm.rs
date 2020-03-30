@@ -31,15 +31,9 @@ use crate::cpu;
 use crate::device_manager::{get_win_size, Console, DeviceManager, DeviceManagerError};
 use crate::memory_manager::{get_host_cpu_phys_bits, Error as MemoryManagerError, MemoryManager};
 use anyhow::anyhow;
-#[cfg(target_arch = "aarch64")]
-use arch::aarch64::gic;
+//#[cfg(target_arch = "aarch64")]
+//use arch::aarch64::gic;
 use arch::BootProtocol;
-#[cfg(target_arch = "aarch64")]
-use arch::DeviceType;
-#[cfg(target_arch = "aarch64")]
-use arch::InitrdConfig;
-#[cfg(target_arch = "aarch64")]
-use arch::MMIODeviceInfo;
 use arch::{layout, EntryPoint};
 #[cfg(target_arch = "x86_64")]
 use devices::ioapic;
@@ -52,8 +46,8 @@ use kvm_ioctls::*;
 use linux_loader::cmdline::Cmdline;
 use linux_loader::loader::KernelLoader;
 use signal_hook::{iterator::Signals, SIGINT, SIGTERM, SIGWINCH};
-#[cfg(target_arch = "aarch64")]
-use std::collections::HashMap;
+//#[cfg(target_arch = "aarch64")]
+//use std::collections::HashMap;
 use std::ffi::CString;
 use std::fs::File;
 // Import related with the commented initrd interfaces, to be open in the future.
@@ -246,8 +240,6 @@ impl VmState {
 }
 
 pub struct Vm {
-    #[cfg(target_arch = "aarch64")]
-    fd: Arc<VmFd>,
     kernel: File,
     threads: Vec<thread::JoinHandle<()>>,
     device_manager: Arc<Mutex<DeviceManager>>,
@@ -273,8 +265,11 @@ impl Vm {
             return Err(Error::CapabilityMissing(Cap::SignalMsi));
         }
 
-        if !kvm.check_extension(Cap::TscDeadlineTimer) {
-            return Err(Error::CapabilityMissing(Cap::TscDeadlineTimer));
+        #[cfg(target_arch = "x86_64")]
+        {
+            if !kvm.check_extension(Cap::TscDeadlineTimer) {
+                return Err(Error::CapabilityMissing(Cap::TscDeadlineTimer));
+            }
         }
         #[cfg(target_arch = "x86_64")]
         {
@@ -438,8 +433,6 @@ impl Vm {
         .map_err(Error::CpuManager)?;
 
         Ok(Vm {
-            #[cfg(target_arch = "aarch64")]
-            fd,
             kernel,
             device_manager,
             config,
@@ -453,7 +446,15 @@ impl Vm {
     }
 
     #[cfg(target_arch = "aarch64")]
-    fn load_kernel_entry(&mut self) -> Result<EntryPoint> {
+    fn load_kernel(&mut self) -> Result<EntryPoint> {
+        let mut cmdline = Cmdline::new(arch::CMDLINE_MAX_SIZE);
+        cmdline
+            .insert_str(self.config.lock().unwrap().cmdline.args.clone())
+            .map_err(Error::CmdLineInsertStr)?;
+        for entry in self.device_manager.lock().unwrap().cmdline_additions() {
+            cmdline.insert_str(entry).map_err(Error::CmdLineInsertStr)?;
+        }
+
         let guest_memory = self.memory_manager.lock().as_ref().unwrap().guest_memory();
         let mem = guest_memory.memory();
         let entry_addr = match linux_loader::loader::PE::load(
@@ -466,90 +467,16 @@ impl Vm {
             _ => panic!("Invalid elf file"),
         };
 
-        let _boot_vcpus = self.cpu_manager.lock().unwrap().boot_vcpus();
-        let _max_vcpus = self.cpu_manager.lock().unwrap().max_vcpus();
-
-        let mut entry_point_addr: GuestAddress = entry_addr.kernel_load;
-
-        let boot_prot = if entry_addr.pvh_entry_addr.is_some() {
-            // entry_addr.pvh_entry_addr field is safe to unwrap here
-            entry_point_addr = entry_addr.pvh_entry_addr.unwrap();
-            BootProtocol::PvhBoot
-        } else {
-            BootProtocol::LinuxBoot
-        };
+        let entry_point_addr: GuestAddress = entry_addr.kernel_load;
 
         Ok(EntryPoint {
             entry_addr: entry_point_addr,
-            protocol: boot_prot,
-        })
-    }
-
-    // Some initrd interfaces to be used in the future integration with real initrd.
-    /*
-    #[cfg(target_arch = "aarch64")]
-    fn load_initrd_from_file(
-        &mut self,
-        initrd_file: &Option<std::fs::File>,
-        vm_memory: &GuestMemoryMmap,
-    ) -> std::result::Result<Option<InitrdConfig>, Error> {
-        use self::Error::InitrdRead;
-
-        Ok(match initrd_file {
-            Some(f) => Some(self.load_initrd(vm_memory, &mut f.try_clone().map_err(InitrdRead)?)?),
-            None => None,
+            protocol: BootProtocol::LinuxBoot,
         })
     }
 
     #[cfg(target_arch = "aarch64")]
-    /// Loads the initrd from a file into the given memory slice.
-    ///
-    /// * `vm_memory` - The guest memory the initrd is written to.
-    /// * `image` - The initrd image.
-    ///
-    /// Returns the result of initrd loading
-    fn load_initrd<F>(
-        &mut self,
-        vm_memory: &GuestMemoryMmap,
-        image: &mut F,
-    ) -> std::result::Result<InitrdConfig, Error>
-    where
-        F: Read + Seek,
-    {
-        use self::Error::{InitrdLoad, InitrdRead};
-
-        let size: usize;
-        // Get the image size
-        match image.seek(SeekFrom::End(0)) {
-            Err(e) => return Err(InitrdRead(e)),
-            Ok(0) => {
-                return Err(InitrdRead(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "Initrd image seek returned a size of zero",
-                )))
-            }
-            Ok(s) => size = s as usize,
-        };
-        // Go back to the image start
-        image.seek(SeekFrom::Start(0)).map_err(InitrdRead)?;
-
-        // Get the target address
-        let address = arch::initrd_load_addr(vm_memory, size).map_err(|_| InitrdLoad)?;
-
-        // Load the image into memory
-        vm_memory
-            .read_from(GuestAddress(address), image, size)
-            .map_err(|_| InitrdLoad)?;
-
-        Ok(InitrdConfig {
-            address: GuestAddress(address),
-            size,
-        })
-    }
-    */
-
-    #[cfg(target_arch = "aarch64")]
-    fn load_kernel_configure_system(&mut self) -> std::result::Result<(), Error> {
+    fn configure_system(&mut self, vcpus: &[cpu::Vcpu], _entry_addr: EntryPoint) -> Result<()> {
         let mut cmdline = Cmdline::new(arch::CMDLINE_MAX_SIZE);
         cmdline
             .insert_str(self.config.lock().unwrap().cmdline.args.clone())
@@ -557,60 +484,19 @@ impl Vm {
         for entry in self.device_manager.lock().unwrap().cmdline_additions() {
             cmdline.insert_str(entry).map_err(Error::CmdLineInsertStr)?;
         }
-
         let cmdline_cstring = CString::new(cmdline).map_err(Error::CmdLineCString)?;
 
-        // Note, Aarch64 does not write the kernel command line to guest memory.
-        // The command line will be handled via FDT.
+        let vcpu_mpidr = self.cpu_manager.lock().unwrap().get_mpidr(vcpus);
         let guest_memory = self.memory_manager.lock().as_ref().unwrap().guest_memory();
         let mem = guest_memory.memory();
-
-        //let dummy_initrd = load_initrd_from_file(boot_config, &mem)?;
-        let dummy_initrd = InitrdConfig {
-            address: GuestAddress(0x10000000),
-            size: 0x1000,
-        };
-
-        // dummy vcpu_mpidr for place holding ,after integration with vcpu code reorg this can be
-        // changed to real
-        let dummy_vcpu_mpidr = vec![0];
-
-        // dummy device info for place holding, after integration with device manager this can be
-        // changed to real
-        let dummy_dev_info: HashMap<(DeviceType, std::string::String), MMIODeviceInfo> = [
-            (
-                (DeviceType::Serial, DeviceType::Serial.to_string()),
-                MMIODeviceInfo { addr: 0x00, irq: 1 },
-            ),
-            (
-                (DeviceType::Virtio(1), "virtio".to_string()),
-                MMIODeviceInfo {
-                    addr: 0x00 + arch::LEN,
-                    irq: 2,
-                },
-            ),
-            (
-                (DeviceType::RTC, "rtc".to_string()),
-                MMIODeviceInfo {
-                    addr: 0x00 + 2 * arch::LEN,
-                    irq: 3,
-                },
-            ),
-        ]
-        .iter()
-        .cloned()
-        .collect();
-
-        // dummy gic device
-        let dummy_gic = gic::create_gic(&self.fd.clone(), 1).unwrap();
 
         arch::configure_system(
             &mem,
             &cmdline_cstring,
-            dummy_vcpu_mpidr,
-            Some(&dummy_dev_info),
-            &dummy_gic,
-            &Some(dummy_initrd),
+            vcpu_mpidr,
+            Some(self.device_manager.lock().unwrap().get_device_info()),
+            self.device_manager.lock().unwrap().get_irqchip(),
+            &None,
         )
         .map_err(Error::ConfigureSystem)?;
 
@@ -655,8 +541,57 @@ impl Vm {
             &cmdline_cstring,
         )
         .map_err(Error::LoadCmdLine)?;
+
+        match entry_addr.setup_header {
+            Some(_hdr) => {
+                let load_addr = entry_addr
+                    .kernel_load
+                    .raw_value()
+                    .checked_add(KERNEL_64BIT_ENTRY_OFFSET)
+                    .ok_or(Error::MemOverflow)?;
+
+                Ok(EntryPoint {
+                    entry_addr: GuestAddress(load_addr),
+                    protocol: BootProtocol::LinuxBoot,
+                    load_result: entry_addr.clone(),
+                })
+            }
+            None => {
+                // Assume by default Linux boot protocol is used and not PVH
+                let mut entry_point_addr: GuestAddress = entry_addr.kernel_load;
+
+                let boot_prot = if entry_addr.pvh_entry_addr.is_some() {
+                    // entry_addr.pvh_entry_addr field is safe to unwrap here
+                    entry_point_addr = entry_addr.pvh_entry_addr.unwrap();
+                    BootProtocol::PvhBoot
+                } else {
+                    BootProtocol::LinuxBoot
+                };
+
+                Ok(EntryPoint {
+                    entry_addr: entry_point_addr,
+                    protocol: boot_prot,
+                    load_result: entry_addr.clone(),
+                })
+            }
+        }
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    fn configure_system(&mut self, _vcpus: &[cpu::Vcpu], entry_addr: EntryPoint) -> Result<()> {
+        let mut cmdline = Cmdline::new(arch::CMDLINE_MAX_SIZE);
+        cmdline
+            .insert_str(self.config.lock().unwrap().cmdline.args.clone())
+            .map_err(Error::CmdLineInsertStr)?;
+        for entry in self.device_manager.lock().unwrap().cmdline_additions() {
+            cmdline.insert_str(entry).map_err(Error::CmdLineInsertStr)?;
+        }
+
+        let cmdline_cstring = CString::new(cmdline).map_err(Error::CmdLineCString)?;
+        let guest_memory = self.memory_manager.lock().as_ref().unwrap().guest_memory();
+        let mem = guest_memory.memory();
+
         let boot_vcpus = self.cpu_manager.lock().unwrap().boot_vcpus();
-        let _max_vcpus = self.cpu_manager.lock().unwrap().max_vcpus();
 
         #[allow(unused_mut, unused_assignments)]
         let mut rsdp_addr: Option<GuestAddress> = None;
@@ -671,7 +606,7 @@ impl Vm {
             ));
         }
 
-        match entry_addr.setup_header {
+        match entry_addr.load_result.setup_header {
             Some(hdr) => {
                 arch::configure_system(
                     &mem,
@@ -683,25 +618,11 @@ impl Vm {
                     BootProtocol::LinuxBoot,
                 )
                 .map_err(Error::ConfigureSystem)?;
-
-                let load_addr = entry_addr
-                    .kernel_load
-                    .raw_value()
-                    .checked_add(KERNEL_64BIT_ENTRY_OFFSET)
-                    .ok_or(Error::MemOverflow)?;
-
-                Ok(EntryPoint {
-                    entry_addr: GuestAddress(load_addr),
-                    protocol: BootProtocol::LinuxBoot,
-                })
             }
             None => {
                 // Assume by default Linux boot protocol is used and not PVH
-                let mut entry_point_addr: GuestAddress = entry_addr.kernel_load;
 
-                let boot_prot = if entry_addr.pvh_entry_addr.is_some() {
-                    // entry_addr.pvh_entry_addr field is safe to unwrap here
-                    entry_point_addr = entry_addr.pvh_entry_addr.unwrap();
+                let boot_prot = if entry_addr.load_result.pvh_entry_addr.is_some() {
                     BootProtocol::PvhBoot
                 } else {
                     BootProtocol::LinuxBoot
@@ -717,13 +638,9 @@ impl Vm {
                     boot_prot,
                 )
                 .map_err(Error::ConfigureSystem)?;
-
-                Ok(EntryPoint {
-                    entry_addr: entry_point_addr,
-                    protocol: boot_prot,
-                })
             }
         }
+        Ok(())
     }
 
     pub fn shutdown(&mut self) -> Result<()> {
@@ -902,20 +819,41 @@ impl Vm {
         let new_state = VmState::Running;
         current_state.valid_transition(new_state)?;
 
-        #[cfg(target_arch = "x86_64")]
+        // Load kernel and configure system. For ARM, FDT is created.
+        // Before arriving here, devices have been added in
+        // DeviceManager::new()
         let entry_addr = self.load_kernel()?;
+
+        // create and configure vcpus
+        let vcpus = self
+            .cpu_manager
+            .lock()
+            .unwrap()
+            .create_boot_vcpus(entry_addr.clone())
+            .map_err(Error::CpuManager)?;
+
+        // Aarch64 GIC must be created after VCPU
         #[cfg(target_arch = "aarch64")]
-        let entry_addr = self.load_kernel_entry()?;
+        self.device_manager
+            .lock()
+            .unwrap()
+            .create_irqchip(vcpus.len() as u64)
+            .unwrap();
+
+        // Once GIC created, register irqfd.
+        // Counter part of X86 was done in IOAPIC setup.
+        #[cfg(target_arch = "aarch64")]
+        self.device_manager.lock().unwrap().enable_ioapic().unwrap();
+
+        self.configure_system(vcpus.as_slice(), entry_addr.clone())?;
+
+        let desired_vcpus = self.cpu_manager.lock().unwrap().boot_vcpus();
 
         self.cpu_manager
             .lock()
             .unwrap()
-            .start_boot_vcpus(entry_addr)
+            .start_vcpus(desired_vcpus, vcpus, entry_addr.clone())
             .map_err(Error::CpuManager)?;
-
-        #[cfg(target_arch = "aarch64")]
-        // ###Declare another start_boot_vcpus function specificly for aarch64 to pass vcpu out###
-        self.load_kernel_configure_system()?;
 
         if self
             .device_manager
