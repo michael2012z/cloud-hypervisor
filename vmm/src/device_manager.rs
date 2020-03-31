@@ -21,10 +21,14 @@ use crate::interrupt::{
 use crate::memory_manager::{Error as MemoryManagerError, MemoryManager};
 #[cfg(feature = "acpi")]
 use acpi_tables::{aml, aml::Aml};
+#[cfg(target_arch = "aarch64")]
+use arch::aarch64::DeviceInfoForFDT;
 #[cfg(feature = "acpi")]
 use arch::layout;
 #[cfg(target_arch = "x86_64")]
 use arch::layout::{APIC_START, IOAPIC_SIZE, IOAPIC_START};
+#[cfg(target_arch = "aarch64")]
+use arch::DeviceType;
 use devices::{ioapic, BusDevice, HotPlugNotificationFlags};
 use kvm_ioctls::*;
 use libc::O_TMPFILE;
@@ -454,6 +458,28 @@ impl Drop for ActivatedBackend {
     }
 }
 
+/// Private structure for storing information about the MMIO device registered at some address on the bus.
+#[derive(Clone, Debug)]
+#[cfg(target_arch = "aarch64")]
+pub struct MMIODeviceInfo {
+    addr: u64,
+    irq: u32,
+    len: u64,
+}
+
+#[cfg(target_arch = "aarch64")]
+impl DeviceInfoForFDT for MMIODeviceInfo {
+    fn addr(&self) -> u64 {
+        self.addr
+    }
+    fn irq(&self) -> u32 {
+        self.irq
+    }
+    fn length(&self) -> u64 {
+        self.len
+    }
+}
+
 pub struct DeviceManager {
     // Manage address space related to devices
     address_manager: Arc<AddressManager>,
@@ -536,6 +562,9 @@ pub struct DeviceManager {
     // Hashmap of PCI b/d/f to their corresponding Arc<Mutex<dyn PciDevice>>.
     #[cfg(feature = "pci_support")]
     pci_devices: HashMap<u32, Arc<dyn Any + Send + Sync>>,
+
+    #[cfg(target_arch = "aarch64")]
+    id_to_dev_info: HashMap<(DeviceType, String), MMIODeviceInfo>,
 }
 
 impl DeviceManager {
@@ -555,6 +584,8 @@ impl DeviceManager {
         let mut bus_devices: Vec<Arc<Mutex<dyn BusDevice>>> = Vec::new();
         #[cfg(target_arch = "aarch64")]
         let bus_devices: Vec<Arc<Mutex<dyn BusDevice>>> = Vec::new();
+        #[cfg(target_arch = "aarch64")]
+        let id_to_dev_info = HashMap::new();
         let mut _mmap_regions = Vec::new();
 
         #[allow(unused_mut)]
@@ -649,6 +680,8 @@ impl DeviceManager {
             device_id_cnt: Wrapping(0),
             #[cfg(feature = "pci_support")]
             pci_devices: HashMap::new(),
+            #[cfg(target_arch = "aarch64")]
+            id_to_dev_info,
         };
 
         device_manager
@@ -698,6 +731,12 @@ impl DeviceManager {
             .map_err(DeviceManagerError::BusError)?;
 
         Ok(device_manager)
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    /// Gets the information of the devices registered up to some point in time.
+    pub fn get_device_info(&self) -> &HashMap<(DeviceType, String), MMIODeviceInfo> {
+        &self.id_to_dev_info
     }
 
     #[allow(unused_variables)]
@@ -1034,6 +1073,16 @@ impl DeviceManager {
                     MMIO_LEN,
                 )
                 .map_err(DeviceManagerError::BusError)?;
+
+            #[cfg(target_arch = "aarch64")]
+            self.id_to_dev_info.insert(
+                (DeviceType::Serial, DeviceType::Serial.to_string()),
+                MMIODeviceInfo {
+                    addr: arch::layout::SERIAL_DEVICE_MMIO_START,
+                    len: MMIO_LEN,
+                    irq: serial_irq,
+                },
+            );
 
             #[cfg(target_arch = "x86_64")]
             self.address_manager
