@@ -87,7 +87,7 @@ pub fn create_fdt<T: DeviceInfoForFDT + Clone + Debug>(
     guest_mem: &GuestMemoryMmap,
     cmdline: &CStr,
     vcpu_mpidr: Vec<u64>,
-    device_info: Option<&HashMap<(DeviceType, String), T>>,
+    device_info: &HashMap<(DeviceType, String), T>,
     gic_device: &Box<dyn GICDevice>,
     initrd: &Option<InitrdConfig>,
 ) -> Result<Vec<u8>> {
@@ -117,7 +117,7 @@ pub fn create_fdt<T: DeviceInfoForFDT + Clone + Debug>(
     create_timer_node(&mut fdt)?;
     create_clock_node(&mut fdt)?;
     create_psci_node(&mut fdt)?;
-    device_info.map_or(Ok(()), |v| create_devices_node(&mut fdt, v))?;
+    create_devices_node(&mut fdt, device_info)?;
 
     // End Header node.
     append_end_node(&mut fdt)?;
@@ -530,8 +530,8 @@ mod tests {
     use super::*;
     use crate::aarch64::gic::create_gic;
     use crate::aarch64::{arch_memory_regions, layout};
-    use kvm_ioctls::Kvm;
     use crate::MMIODeviceInfo;
+    use kvm_ioctls::Kvm;
 
     // The `load` function from the `device_tree` will mistakenly check the actual size
     // of the buffer with the allocated size. This works around that.

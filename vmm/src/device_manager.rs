@@ -293,6 +293,7 @@ pub fn get_win_size() -> (u16, u16) {
         rows: 0u16,
         cols: 0u16,
     };
+    info!("");
     unsafe {
         libc::ioctl(0, TIOCGWINSZ, &ws);
     }
