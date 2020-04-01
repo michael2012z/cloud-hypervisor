@@ -57,7 +57,8 @@ pub const PCI_MMCONFIG_SIZE: GuestUsize = (256 << 20);
 // The MMIO allocator need to be updated to cover more MMIO allocation besides
 // PCI-transport virtio devices.
 pub const SERIAL_DEVICE_MMIO_START: u64 = PCI_MMCONFIG_START.0 + PCI_MMCONFIG_SIZE;
-
+// Same here for RTC
+pub const RTC_DEVICE_MMIO_START: u64 = SERIAL_DEVICE_MMIO_START + 0x1000;
 // BAD NAME for aarch64. We uses this for the start of DRAM
 pub const RAM_64BIT_START: GuestAddress = GuestAddress(0x8000_0000);
 
