@@ -491,12 +491,19 @@ impl Vm {
         let guest_memory = self.memory_manager.lock().as_ref().unwrap().guest_memory();
         let mem = guest_memory.memory();
 
+        let device_info = &self
+            .device_manager
+            .lock()
+            .unwrap()
+            .get_device_info()
+            .clone();
+
         arch::configure_system(
             &mem,
             &cmdline_cstring,
             vcpu_mpidr,
-            Some(self.device_manager.lock().unwrap().get_device_info()),
-            self.device_manager.lock().unwrap().get_irqchip(),
+            device_info,
+            self.device_manager.lock().unwrap().get_irqchip().clone(),
             &None,
         )
         .map_err(Error::ConfigureSystem)?;
