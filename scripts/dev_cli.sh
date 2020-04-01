@@ -209,6 +209,18 @@ cmd_clean() {
 	         "${cargo_args[@]}"
     }
 
+cmd_bash() {
+	$DOCKER_RUNTIME run -it\
+	       --workdir "$CTR_CLH_ROOT_DIR" \
+	       --rm \
+	       --device /dev/kvm \
+	       --device /dev/net/tun \
+	       --cap-add net_admin \
+	       --volume "$CLH_ROOT_DIR:$CTR_CLH_ROOT_DIR" \
+	       "$CTR_IMAGE" \
+		   bash
+    }
+
 cmd_tests() {
     unit=false
     cargo=false
