@@ -408,6 +408,7 @@ impl Vm {
             allocator,
             memory_manager.clone(),
             &exit_evt,
+            #[cfg(target_arch = "x86_64")]
             &reset_evt,
             vmm_path,
         )

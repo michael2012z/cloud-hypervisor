@@ -6,6 +6,7 @@
 // found in the LICENSE-BSD-3-Clause file.
 
 //! Emulates virtual and hardware devices.
+extern crate arch;
 #[macro_use]
 extern crate bitflags;
 extern crate byteorder;

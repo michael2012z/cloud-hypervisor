@@ -274,6 +274,10 @@ pub enum DeviceManagerError {
     #[cfg(target_arch = "aarch64")]
     /// Failed to setup GIC
     SetupGIC(gic::Error),
+
+    /// Registering an IRQ FD failed.
+    #[cfg(target_arch = "aarch64")]
+    RegisterIrqFd(kvm_ioctls::Error),
 }
 pub type DeviceManagerResult<T> = result::Result<T, DeviceManagerError>;
 
@@ -585,6 +589,7 @@ impl DeviceManager {
         allocator: Arc<Mutex<SystemAllocator>>,
         memory_manager: Arc<Mutex<MemoryManager>>,
         _exit_evt: &EventFd,
+        #[cfg(target_arch = "x86_64")]
         reset_evt: &EventFd,
         vmm_path: PathBuf,
     ) -> DeviceManagerResult<Arc<Mutex<Self>>> {
@@ -625,7 +630,7 @@ impl DeviceManager {
         let msi_interrupt_manager: Arc<dyn InterruptManager<GroupConfig = MsiIrqGroupConfig>> =
             Arc::new(KvmMsiInterruptManager::new(
                 Arc::clone(&address_manager.allocator),
-                vm_fd,
+                vm_fd.clone(),
                 Arc::clone(&kvm_gsi_msi_routes),
             ));
 
@@ -698,8 +703,14 @@ impl DeviceManager {
             irqchip: None,
         };
 
+        #[cfg(target_arch = "x86_64")]
         device_manager
             .add_legacy_devices(reset_evt.try_clone().map_err(DeviceManagerError::EventFd)?)?;
+
+        #[cfg(target_arch = "aarch64")]
+        device_manager.add_legacy_devices(
+            &legacy_interrupt_manager,
+        )?;
 
         #[cfg(feature = "acpi")]
         {
@@ -1023,7 +1034,10 @@ impl DeviceManager {
     }
 
     #[cfg(target_arch = "aarch64")]
-    fn add_legacy_devices(&mut self, _reset_evt: EventFd) -> DeviceManagerResult<()> {
+    fn add_legacy_devices(
+        &mut self,
+        interrupt_manager: &Arc<dyn InterruptManager<GroupConfig = LegacyIrqGroupConfig>>,
+    ) -> DeviceManagerResult<()> {
         // Add a shutdown device (i8042)
         // TODO: check if we need to add i8042 back on arm
 
@@ -1056,6 +1070,44 @@ impl DeviceManager {
                 .insert(cmos, 0x70, 0x2)
                 .map_err(DeviceManagerError::BusError)?;
         }
+
+        // Add a RTC device
+        let rtc_irq = self
+            .address_manager
+            .allocator
+            .lock()
+            .unwrap()
+            .allocate_irq()
+            .unwrap();
+
+        let interrupt_group = interrupt_manager
+            .create_group(LegacyIrqGroupConfig {
+                irq: rtc_irq as InterruptIndex,
+            })
+            .map_err(DeviceManagerError::CreateInterruptGroup)?;
+
+        let rtc_device = Arc::new(Mutex::new(devices::legacy::RTC::new(interrupt_group)));
+
+        self.bus_devices
+            .push(Arc::clone(&rtc_device) as Arc<Mutex<dyn BusDevice>>);
+
+        self.address_manager
+            .mmio_bus
+            .insert(
+                rtc_device.clone(),
+                arch::layout::RTC_DEVICE_MMIO_START,
+                MMIO_LEN,
+            )
+            .map_err(DeviceManagerError::BusError)?;
+
+        self.id_to_dev_info.insert(
+            (DeviceType::RTC, "rtc".to_string()),
+            MMIODeviceInfo {
+                addr: arch::layout::RTC_DEVICE_MMIO_START,
+                len: MMIO_LEN,
+                irq: rtc_irq,
+            },
+        );
 
         Ok(())
     }
