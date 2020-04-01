@@ -72,43 +72,11 @@ pub use self::fdt::DeviceInfoForFDT;
 use crate::DeviceType;
 
 pub fn arch_memory_regions(size: GuestUsize) -> Vec<(GuestAddress, usize, RegionType)> {
-    let reserved_memory_gap_start = layout::MEM_32BIT_RESERVED_START
-        .checked_add(layout::MEM_32BIT_DEVICES_SIZE)
-        .expect("32-bit reserved region is too large");
-
-    let requested_memory_size = GuestAddress(size as u64);
     let mut regions = Vec::new();
-
-    // case1: guest memory fits before the gap
-    if size as u64 <= layout::MEM_32BIT_RESERVED_START.raw_value() {
-        regions.push((GuestAddress(0), size as usize, RegionType::Ram));
-    // case2: guest memory extends beyond the gap
-    } else {
-        // push memory before the gap
-        regions.push((
-            GuestAddress(0),
-            layout::MEM_32BIT_RESERVED_START.raw_value() as usize,
-            RegionType::Ram,
-        ));
-        regions.push((
-            layout::RAM_64BIT_START,
-            requested_memory_size.unchecked_offset_from(layout::MEM_32BIT_RESERVED_START) as usize,
-            RegionType::Ram,
-        ));
-    }
-
-    // Add the 32-bit device memory hole as a sub region.
     regions.push((
-        layout::MEM_32BIT_RESERVED_START,
-        layout::MEM_32BIT_DEVICES_SIZE as usize,
-        RegionType::SubRegion,
-    ));
-
-    // Add the 32-bit reserved memory hole as a sub region.
-    regions.push((
-        reserved_memory_gap_start,
-        (layout::MEM_32BIT_RESERVED_SIZE - layout::MEM_32BIT_DEVICES_SIZE) as usize,
-        RegionType::Reserved,
+        GuestAddress(layout::DRAM_MEM_START),
+        size as usize,
+        RegionType::Ram,
     ));
 
     regions

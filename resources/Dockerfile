@@ -54,4 +54,4 @@ RUN echo 'source $CARGO_HOME/env' >> $HOME/.bashrc \
 
 RUN apt-get update
 RUN apt-get -yq upgrade
-RUN if [ $(uname -m) = "aarch64" ]; then DEBIAN_FRONTEND=noninteractive apt-get install -yq libfdt-dev; fi
+RUN if [ $(uname -m) = "aarch64" ]; then DEBIAN_FRONTEND=noninteractive apt-get install -yq libfdt-dev gdb; fi
