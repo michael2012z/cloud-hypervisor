@@ -16,6 +16,7 @@ extern crate vm_memory;
 mod address;
 mod gsi;
 mod system;
+#[cfg(target_arch = "aarch64")]
 #[macro_use]
 extern crate log;
 

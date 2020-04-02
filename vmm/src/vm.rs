@@ -29,7 +29,9 @@ extern crate vm_virtio;
 use crate::config::{DeviceConfig, VmConfig};
 use crate::cpu;
 use crate::device_manager::{get_win_size, Console, DeviceManager, DeviceManagerError};
-use crate::memory_manager::{get_host_cpu_phys_bits, Error as MemoryManagerError, MemoryManager};
+#[cfg(target_arch = "x86_64")]
+use crate::memory_manager::get_host_cpu_phys_bits;
+use crate::memory_manager::{Error as MemoryManagerError, MemoryManager};
 use anyhow::anyhow;
 //#[cfg(target_arch = "aarch64")]
 //use arch::aarch64::gic;
@@ -378,12 +380,8 @@ impl Vm {
         #[cfg(target_arch = "aarch64")]
         let allocator = Arc::new(Mutex::new(
             SystemAllocator::new(
-                GuestAddress(0),
-                1 << get_host_cpu_phys_bits(),
-                layout::MEM_32BIT_RESERVED_START,
-                layout::MEM_32BIT_DEVICES_SIZE,
-                #[cfg(target_arch = "x86_64")]
-                vec![ioapic],
+                GuestAddress(layout::MAPPED_IO_START),
+                layout::MAPPED_IO_SIZE,
             )
             .ok_or(Error::CreateSystemAllocator)?,
         ));

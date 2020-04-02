@@ -228,11 +228,20 @@ impl MemoryManager {
 
         let end_of_device_area = GuestAddress((1 << get_host_cpu_phys_bits()) - 1);
         let mem_end = guest_memory.last_addr();
+
+        #[cfg(target_arch = "x86_64")]
         let mut start_of_device_area = if mem_end < arch::layout::MEM_32BIT_RESERVED_START {
             arch::layout::RAM_64BIT_START
         } else {
             mem_end.unchecked_add(1)
         };
+
+        #[cfg(target_arch = "aarch64")]
+        let mut start_of_device_area = mem_end.unchecked_add(1);
+
+        if start_of_device_area == GuestAddress(0) {
+            panic!("error happened in setting start_of_device_area");
+        }
 
         if let Some(size) = hotplug_size {
             start_of_device_area = start_of_device_area.unchecked_add(size);
@@ -269,6 +278,7 @@ impl MemoryManager {
         })?;
 
         // Allocate RAM and Reserved address ranges.
+        #[cfg(target_arch = "x86_64")]
         for region in arch_mem_regions.iter() {
             allocator
                 .lock()
@@ -336,11 +346,15 @@ impl MemoryManager {
         // Start address needs to be non-contiguous with last memory added (leaving a gap of 256MiB)
         // and also aligned to 128MiB boundary. It must also start at the 64bit start.
         let mem_end = self.guest_memory.memory().last_addr();
+        #[cfg(target_arch = "x86_64")]
         let start_addr = if mem_end < arch::layout::MEM_32BIT_RESERVED_START {
             arch::layout::RAM_64BIT_START
         } else {
             GuestAddress((mem_end.0 + 1 + (256 << 20)) & !((128 << 20) - 1))
         };
+
+        #[cfg(target_arch = "aarch64")]
+        let start_addr = GuestAddress((mem_end.0 + 1 + (256 << 20)) & !((128 << 20) - 1));
 
         if start_addr.checked_add(size.try_into().unwrap()).unwrap() >= self.start_of_device_area()
         {

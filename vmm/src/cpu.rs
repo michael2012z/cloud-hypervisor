@@ -392,6 +392,8 @@ impl Vcpu {
     /// Note that the state of the VCPU and associated VM must be setup first for this to do
     /// anything useful.
     pub fn run(&self) -> Result<bool> {
+        info!("");
+
         match self.fd.run() {
             Ok(run) => match run {
                 #[cfg(target_arch = "aarch64")]
@@ -429,10 +431,12 @@ impl Vcpu {
                     Ok(true)
                 }
                 VcpuExit::MmioRead(addr, data) => {
+                    info!("");
                     self.mmio_bus.read(addr as u64, data);
                     Ok(true)
                 }
                 VcpuExit::MmioWrite(addr, data) => {
+                    info!("");
                     self.mmio_bus.write(addr as u64, data);
                     Ok(true)
                 }
@@ -454,6 +458,7 @@ impl Vcpu {
                     Err(Error::VcpuUnhandledKvmExit)
                 }
                 VcpuExit::Shutdown => {
+                    info!("");
                     // Triple fault to trigger a reboot
                     Ok(false)
                 }

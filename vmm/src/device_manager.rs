@@ -1089,19 +1089,23 @@ impl DeviceManager {
         self.bus_devices
             .push(Arc::clone(&rtc_device) as Arc<Mutex<dyn BusDevice>>);
 
+        let addr = self
+            .address_manager
+            .allocator
+            .lock()
+            .unwrap()
+            .allocate_mmio_addresses(None, MMIO_LEN, None)
+            .unwrap();
+
         self.address_manager
             .mmio_bus
-            .insert(
-                rtc_device.clone(),
-                arch::layout::RTC_DEVICE_MMIO_START,
-                MMIO_LEN,
-            )
+            .insert(rtc_device.clone(), addr.0, MMIO_LEN)
             .map_err(DeviceManagerError::BusError)?;
 
         self.id_to_dev_info.insert(
             (DeviceType::RTC, "rtc".to_string()),
             MMIODeviceInfo {
-                addr: arch::layout::RTC_DEVICE_MMIO_START,
+                addr: addr.0,
                 len: MMIO_LEN,
                 irq: rtc_irq,
             },
@@ -1153,30 +1157,33 @@ impl DeviceManager {
                 .push(Arc::clone(&serial) as Arc<Mutex<dyn BusDevice>>);
 
             #[cfg(target_arch = "aarch64")]
+            let addr = self
+                .address_manager
+                .allocator
+                .lock()
+                .unwrap()
+                .allocate_mmio_addresses(None, MMIO_LEN, None)
+                .unwrap();
+
+            #[cfg(target_arch = "aarch64")]
             self.address_manager
                 .mmio_bus
-                .insert(
-                    serial.clone(),
-                    arch::layout::SERIAL_DEVICE_MMIO_START,
-                    MMIO_LEN,
-                )
+                .insert(serial.clone(), addr.0, MMIO_LEN)
                 .map_err(DeviceManagerError::BusError)?;
 
             #[cfg(target_arch = "aarch64")]
             self.id_to_dev_info.insert(
                 (DeviceType::Serial, DeviceType::Serial.to_string()),
                 MMIODeviceInfo {
-                    addr: arch::layout::SERIAL_DEVICE_MMIO_START,
+                    addr: addr.0,
                     len: MMIO_LEN,
                     irq: serial_irq,
                 },
             );
 
             #[cfg(target_arch = "aarch64")]
-            self.cmdline_additions.push(format!(
-                "earlycon=uart,mmio,0x{:08x}",
-                arch::layout::SERIAL_DEVICE_MMIO_START
-            ));
+            self.cmdline_additions
+                .push(format!("earlycon=uart,mmio,0x{:08x}", addr.0));
 
             #[cfg(target_arch = "x86_64")]
             self.address_manager
