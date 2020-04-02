@@ -98,7 +98,7 @@ pub fn configure_system<T: DeviceInfoForFDT + Clone + Debug>(
     gic_device: &Box<dyn GICDevice>,
     initrd: &Option<super::InitrdConfig>,
 ) -> super::Result<()> {
-    fdt::create_fdt(
+    let dtb = fdt::create_fdt(
         guest_mem,
         cmdline_cstring,
         vcpu_mpidr,
@@ -107,6 +107,19 @@ pub fn configure_system<T: DeviceInfoForFDT + Clone + Debug>(
         initrd,
     )
     .map_err(Error::SetupFDT)?;
+
+    use std::fs;
+    use std::io::Write;
+    use std::path::PathBuf;
+
+    let path = PathBuf::from("./");
+    let mut output = fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .open(path.join("output.dtb"))
+        .unwrap();
+    output.write_all(&dtb).unwrap();
+
     Ok(())
 }
 
