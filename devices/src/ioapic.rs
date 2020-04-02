@@ -142,9 +142,9 @@ pub const NUM_IOAPIC_PINS: usize = 24;
 // Reserve 32 IRQs (GSI 32 ~ 64) for legacy device.
 // GsiAllocator should allocate beyond this: from 64 on
 #[cfg(target_arch = "aarch64")]
-pub const NUM_LEGACY_COUNT: usize = 32;
+pub const IRQ_LEGACY_COUNT: usize = 32;
 #[cfg(target_arch = "aarch64")]
-pub const NUM_GSI_OFFSET: usize = 32;
+pub const IRQ_SPI_OFFSET: usize = 32;
 
 #[cfg(target_arch = "x86_64")]
 const IOAPIC_VERSION_ID: u32 = 0x0017_0011;
@@ -262,8 +262,8 @@ impl Ioapic {
     ) -> Result<Ioapic> {
         let interrupt_source_group = interrupt_manager
             .create_group(MsiIrqGroupConfig {
-                base: NUM_GSI_OFFSET as InterruptIndex,
-                count: NUM_LEGACY_COUNT as InterruptIndex,
+                base: IRQ_SPI_OFFSET as InterruptIndex,
+                count: IRQ_LEGACY_COUNT as InterruptIndex,
             })
             .map_err(Error::CreateInterruptSourceGroup)?;
 

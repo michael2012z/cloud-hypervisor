@@ -16,6 +16,8 @@ extern crate vm_memory;
 mod address;
 mod gsi;
 mod system;
+#[macro_use]
+extern crate log;
 
 pub use crate::address::AddressAllocator;
 pub use crate::gsi::GsiAllocator;
