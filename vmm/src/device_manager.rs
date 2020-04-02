@@ -590,8 +590,7 @@ impl DeviceManager {
         allocator: Arc<Mutex<SystemAllocator>>,
         memory_manager: Arc<Mutex<MemoryManager>>,
         _exit_evt: &EventFd,
-        #[cfg(target_arch = "x86_64")]
-        reset_evt: &EventFd,
+        #[cfg(target_arch = "x86_64")] reset_evt: &EventFd,
         vmm_path: PathBuf,
     ) -> DeviceManagerResult<Arc<Mutex<Self>>> {
         let mut virtio_devices: Vec<(Arc<Mutex<dyn vm_virtio::VirtioDevice>>, bool)> = Vec::new();
@@ -709,9 +708,7 @@ impl DeviceManager {
             .add_legacy_devices(reset_evt.try_clone().map_err(DeviceManagerError::EventFd)?)?;
 
         #[cfg(target_arch = "aarch64")]
-        device_manager.add_legacy_devices(
-            &legacy_interrupt_manager,
-        )?;
+        device_manager.add_legacy_devices(&legacy_interrupt_manager)?;
 
         #[cfg(feature = "acpi")]
         {
@@ -1174,6 +1171,12 @@ impl DeviceManager {
                     irq: serial_irq,
                 },
             );
+
+            #[cfg(target_arch = "aarch64")]
+            self.cmdline_additions.push(format!(
+                "earlycon=uart,mmio,0x{:08x}",
+                arch::layout::SERIAL_DEVICE_MMIO_START
+            ));
 
             #[cfg(target_arch = "x86_64")]
             self.address_manager
