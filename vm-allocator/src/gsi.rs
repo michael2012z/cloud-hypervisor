@@ -34,7 +34,6 @@ pub struct GsiAllocator {
     #[cfg(target_arch = "x86_64")]
     apics: BTreeMap<u32, u32>,
     next_irq: u32,
-    #[cfg(target_arch = "x86_64")]
     next_gsi: u32,
 }
 
@@ -92,20 +91,22 @@ impl GsiAllocator {
 #[cfg(target_arch = "aarch64")]
 impl GsiAllocator {
     /// New GSI allocator
-    /// GSI starts from 32 for GICv2/3,
-    /// 32 irqs are reserved for legacy devices.
-    /// So the allocator should start from 32 + 32
     pub fn new() -> Self {
-        GsiAllocator { next_irq: 64 }
+        GsiAllocator {
+            next_irq: 32,
+            next_gsi: 32 + 32,
+        }
     }
 
     /// Allocate a GSI
     pub fn allocate_gsi(&mut self) -> Result<u32> {
-        self.allocate_irq()
+        self.next_gsi = self.next_gsi.checked_add(1).ok_or(Error::Overflow)?;
+        Ok(self.next_gsi - 1)
     }
 
     /// Allocate an IRQ
     pub fn allocate_irq(&mut self) -> Result<u32> {
+        info!("");
         self.next_irq = self.next_irq.checked_add(1).ok_or(Error::Overflow)?;
         Ok(self.next_irq - 1)
     }
