@@ -73,6 +73,27 @@ use crate::DeviceType;
 
 pub fn arch_memory_regions(size: GuestUsize) -> Vec<(GuestAddress, usize, RegionType)> {
     let mut regions = Vec::new();
+    // 0 ~ 1G: reserved
+    regions.push((
+        GuestAddress(0),
+        layout::MAPPED_IO_START as usize,
+        RegionType::Reserved,
+    ));
+
+    // 1G ~ 1G + 256M: MMIO space
+    regions.push((
+        GuestAddress(layout::MAPPED_IO_START),
+        layout::MAPPED_IO_SIZE as usize,
+        RegionType::SubRegion,
+    ));
+
+    // 1G + 256M ~ 2G: reserved. The leading 256M for PCIe MMCONFIG space
+    regions.push((
+        layout::PCI_MMCONFIG_START,
+        (layout::RAM_64BIT_START - layout::PCI_MMCONFIG_START.0) as usize,
+        RegionType::Reserved,
+    ));
+
     regions.push((
         GuestAddress(layout::DRAM_MEM_START),
         size as usize,
