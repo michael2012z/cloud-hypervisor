@@ -36,7 +36,7 @@ lazy_static= "1.4.0"
 
 [features]
 #default = ["acpi", "pci", "cmos"]
-default = ["pci"]
+default = ["mmio"]
 acpi = ["vmm/acpi"]
 pci = ["vmm/pci_support"]
 mmio = ["vmm/mmio_support"]
