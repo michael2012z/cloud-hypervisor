@@ -1,1 +1,1 @@
-./build/cargo_target/debug/cloud-hypervisor --kernel ./hello-vmlinux.bin --disk path=hello-rootfs.ext4 --cmdline "keep_bootcon console=ttyS0 reboot=k panic=1 pci=off root=/dev/vda rw" --cpus boot=1 --memory size=128M --log-file log.log -vvv
+./build/cargo_target/debug/cloud-hypervisor --kernel ./hello-vmlinux.bin --disk path=hello-rootfs.ext4 --cmdline "keep_bootcon console=ttyS0 reboot=k panic=1 pci=off root=/dev/vda rw" --cpus boot=1 --memory size=128M --log-file log.log -vvv --serial file=serial.log
