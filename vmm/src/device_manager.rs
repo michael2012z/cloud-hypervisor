@@ -1243,18 +1243,21 @@ impl DeviceManager {
 
         // Create "standard" virtio devices (net/block/rng)
         devices.append(&mut self.make_virtio_block_devices()?);
-        devices.append(&mut self.make_virtio_net_devices()?);
-        devices.append(&mut self.make_virtio_rng_devices()?);
 
-        // Add virtio-fs if required
-        devices.append(&mut self.make_virtio_fs_devices()?);
+        // Temporarily skip to ease debugging.
+        if 0 > 1 {
+            devices.append(&mut self.make_virtio_net_devices()?);
+            devices.append(&mut self.make_virtio_rng_devices()?);
 
-        // Add virtio-pmem if required
-        devices.append(&mut self.make_virtio_pmem_devices()?);
+            // Add virtio-fs if required
+            devices.append(&mut self.make_virtio_fs_devices()?);
 
-        // Add virtio-vsock if required
-        devices.append(&mut self.make_virtio_vsock_devices()?);
+            // Add virtio-pmem if required
+            devices.append(&mut self.make_virtio_pmem_devices()?);
 
+            // Add virtio-vsock if required
+            devices.append(&mut self.make_virtio_vsock_devices()?);
+        }
         Ok(devices)
     }
 
@@ -1964,6 +1967,8 @@ impl DeviceManager {
         interrupt_manager: &Arc<dyn InterruptManager<GroupConfig = LegacyIrqGroupConfig>>,
         mmio_base: GuestAddress,
     ) -> DeviceManagerResult<()> {
+        #[cfg(target_arch = "aarch64")]
+        let device_type = virtio_device.lock().unwrap().device_type();
         let memory = self.memory_manager.lock().unwrap().guest_memory();
         let mut mmio_device = vm_virtio::transport::MmioDevice::new(memory, virtio_device)
             .map_err(DeviceManagerError::VirtioDevice)?;
@@ -1999,6 +2004,16 @@ impl DeviceManager {
             .mmio_bus
             .insert(mmio_device_arc.clone(), mmio_base.0, MMIO_LEN)
             .map_err(DeviceManagerError::BusError)?;
+
+        #[cfg(target_arch = "aarch64")]
+        self.id_to_dev_info.insert(
+            (DeviceType::Virtio(device_type), "block".to_string()),
+            MMIODeviceInfo {
+                addr: mmio_base.0,
+                len: MMIO_LEN,
+                irq: irq_num,
+            },
+        );
 
         self.cmdline_additions.push(format!(
             "virtio_mmio.device={}K@0x{:08x}:{}",
