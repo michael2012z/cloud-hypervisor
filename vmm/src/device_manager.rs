@@ -2015,6 +2015,7 @@ impl DeviceManager {
             },
         );
 
+        #[cfg(target_arch = "x86_64")]
         self.cmdline_additions.push(format!(
             "virtio_mmio.device={}K@0x{:08x}:{}",
             MMIO_LEN / 1024,
