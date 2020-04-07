@@ -94,7 +94,7 @@ impl GsiAllocator {
     pub fn new() -> Self {
         GsiAllocator {
             next_irq: 32,
-            next_gsi: 32 + 32,
+            next_gsi: 32,
         }
     }
 
