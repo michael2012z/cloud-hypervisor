@@ -9,7 +9,9 @@ use crate::MEMORY_MANAGER_SNAPSHOT_ID;
 use acpi_tables::{aml, aml::Aml};
 use anyhow::anyhow;
 use arch::{layout, RegionType};
-use devices::{ioapic, BusDevice};
+#[cfg(target_arch = "x86_64")]
+use devices::ioapic;
+use devices::BusDevice;
 use kvm_bindings::{kvm_userspace_memory_region, KVM_MEM_READONLY};
 use kvm_ioctls::*;
 use std::convert::TryInto;
@@ -21,7 +23,9 @@ use std::path::PathBuf;
 use std::result;
 use std::sync::{Arc, Mutex};
 use url::Url;
-use vm_allocator::{GsiApic, SystemAllocator};
+#[cfg(target_arch = "x86_64")]
+use vm_allocator::GsiApic;
+use vm_allocator::SystemAllocator;
 use vm_memory::guest_memory::FileOffset;
 use vm_memory::{
     mmap::MmapRegionError, Address, Bytes, Error as MmapError, GuestAddress, GuestAddressSpace,
@@ -33,6 +37,7 @@ use vm_migration::{
     Transportable,
 };
 
+#[cfg(target_arch = "x86_64")]
 const X86_64_IRQ_BASE: u32 = 5;
 
 const HOTPLUG_COUNT: usize = 8;
@@ -120,6 +125,27 @@ pub enum Error {
     InvalidAmountExternalBackingFiles,
 }
 
+#[cfg(target_arch = "aarch64")]
+pub fn get_host_cpu_phys_bits() -> u8 {
+    // The value returned here is used to determine the physical address space size
+    // for a VM (IPA size).
+    // In recent kernel versions, the maxium IPA size supported by the host can be
+    // known by querying cap KVM_CAP_ARM_VM_IPA_SIZE. And the IPA size for a
+    // guest can be configured smaller.
+    // But in Cloud-Hypervisor we simply use the maxium value for the VM.
+    // Reference https://lwn.net/Articles/766767/.
+    //
+    // The correct way to query KVM_CAP_ARM_VM_IPA_SIZE is via rust-vmm/kvm-ioctls,
+    // which wraps all IOCTL's and provides easy interface to user hypervisors.
+    // For now the cap hasn't been supported. A separate patch will be submitted to
+    // rust-vmm to add it.
+    // So a hardcoded value is used here as a temporary solution.
+    // It will be replace once rust-vmm/kvm-ioctls is ready.
+    //
+    40
+}
+
+#[cfg(target_arch = "x86_64")]
 pub fn get_host_cpu_phys_bits() -> u8 {
     use core::arch::x86_64;
     unsafe {
@@ -280,11 +306,16 @@ impl MemoryManager {
 
         let end_of_device_area = GuestAddress((1 << get_host_cpu_phys_bits()) - 1);
         let mem_end = guest_memory.last_addr();
+
+        #[cfg(target_arch = "x86_64")]
         let mut start_of_device_area = if mem_end < arch::layout::MEM_32BIT_RESERVED_START {
             arch::layout::RAM_64BIT_START
         } else {
             mem_end.unchecked_add(1)
         };
+
+        #[cfg(target_arch = "aarch64")]
+        let mut start_of_device_area = mem_end.unchecked_add(1);
 
         let mut virtiomem_region = None;
         let mut virtiomem_resize = None;
@@ -319,6 +350,7 @@ impl MemoryManager {
         let mut hotplug_slots = Vec::with_capacity(HOTPLUG_COUNT);
         hotplug_slots.resize_with(HOTPLUG_COUNT, HotPlugState::default);
 
+        #[cfg(target_arch = "x86_64")]
         // Let's allocate 64 GiB of addressable MMIO space, starting at 0.
         let allocator = Arc::new(Mutex::new(
             SystemAllocator::new(
@@ -332,6 +364,17 @@ impl MemoryManager {
                     X86_64_IRQ_BASE,
                     ioapic::NUM_IOAPIC_PINS as u32 - X86_64_IRQ_BASE,
                 )],
+            )
+            .ok_or(Error::CreateSystemAllocator)?,
+        ));
+
+        #[cfg(target_arch = "aarch64")]
+        let allocator = Arc::new(Mutex::new(
+            SystemAllocator::new(
+                GuestAddress(0),
+                1 << get_host_cpu_phys_bits(),
+                GuestAddress(layout::PCI_DEVICES_MAPPED_IO_START),
+                layout::PCI_DEVICES_MAPPED_IO_START,
             )
             .ok_or(Error::CreateSystemAllocator)?,
         ));
@@ -594,11 +637,15 @@ impl MemoryManager {
         // Start address needs to be non-contiguous with last memory added (leaving a gap of 256MiB)
         // and also aligned to 128MiB boundary. It must also start at the 64bit start.
         let mem_end = self.guest_memory.memory().last_addr();
+        #[cfg(target_arch = "x86_64")]
         let start_addr = if mem_end < arch::layout::MEM_32BIT_RESERVED_START {
             arch::layout::RAM_64BIT_START
         } else {
             GuestAddress((mem_end.0 + 1 + (256 << 20)) & !((128 << 20) - 1))
         };
+
+        #[cfg(target_arch = "aarch64")]
+        let start_addr = GuestAddress((mem_end.0 + 1 + (256 << 20)) & !((128 << 20) - 1));
 
         if start_addr.checked_add(size.try_into().unwrap()).unwrap() >= self.start_of_device_area()
         {
