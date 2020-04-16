@@ -21,6 +21,8 @@ arch = { path = "../arch" }
 devices = { path = "../devices" }
 epoll = ">=4.0.1"
 kvm-bindings = { git = "https://github.com/cloud-hypervisor/kvm-bindings", branch = "ch", features = ["with-serde", "fam-wrappers"] }
+# Temporarily on AArch64 we need to turn off the 2 features to build.
+# kvm-bindings = { git = "https://github.com/cloud-hypervisor/kvm-bindings", branch = "ch"}
 kvm-ioctls = { git = "https://github.com/cloud-hypervisor/kvm-ioctls", branch = "ch" }
 lazy_static = "1.4.0"
 libc = "0.2.69"
