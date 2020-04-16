@@ -29,34 +29,41 @@ use crate::config::{
     DeviceConfig, DiskConfig, FsConfig, HotplugMethod, NetConfig, PmemConfig, ValidationError,
     VmConfig, VsockConfig,
 };
-use crate::cpu;
+use crate::cpu::{self, Vcpu};
 use crate::device_manager::{get_win_size, Console, DeviceManager, DeviceManagerError};
 use crate::memory_manager::{Error as MemoryManagerError, MemoryManager};
 use crate::migration::{url_to_path, vm_config_from_snapshot, VM_SNAPSHOT_FILE};
 use crate::{CPU_MANAGER_SNAPSHOT_ID, DEVICE_MANAGER_SNAPSHOT_ID, MEMORY_MANAGER_SNAPSHOT_ID};
 use anyhow::anyhow;
-use arch::{BootProtocol, EntryPoint};
-use devices::{ioapic, HotPlugNotificationFlags};
+#[cfg(target_arch = "x86_64")]
+use arch::BootProtocol;
+use arch::EntryPoint;
+#[cfg(target_arch = "x86_64")]
+use devices::ioapic;
+use devices::HotPlugNotificationFlags;
+#[cfg(target_arch = "x86_64")]
 use kvm_bindings::{kvm_enable_cap, kvm_userspace_memory_region, KVM_CAP_SPLIT_IRQCHIP};
 use kvm_ioctls::*;
 use linux_loader::cmdline::Cmdline;
+#[cfg(target_arch = "x86_64")]
 use linux_loader::loader::elf::Error::InvalidElfMagicNumber;
 use linux_loader::loader::KernelLoader;
 use signal_hook::{iterator::Signals, SIGINT, SIGTERM, SIGWINCH};
+#[cfg(target_arch = "x86_64")]
 use std::convert::TryInto;
 use std::ffi::CString;
 use std::fs::{File, OpenOptions};
-use std::io::Write;
-use std::io::{self, Seek, SeekFrom};
+use std::io::{self, Write};
+#[cfg(target_arch = "x86_64")]
+use std::io::{Seek, SeekFrom};
 use std::ops::Deref;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, RwLock};
 use std::{result, str, thread};
 use url::Url;
-use vm_memory::{
-    Address, Bytes, GuestAddress, GuestAddressSpace, GuestMemory, GuestMemoryMmap,
-    GuestMemoryRegion,
-};
+#[cfg(target_arch = "x86_64")]
+use vm_memory::{Address, Bytes, GuestMemory, GuestMemoryMmap, GuestMemoryRegion};
+use vm_memory::{GuestAddress, GuestAddressSpace};
 use vm_migration::{
     Migratable, MigratableError, Pausable, Snapshot, SnapshotDataSection, Snapshottable,
     Transportable,
@@ -65,6 +72,7 @@ use vmm_sys_util::eventfd::EventFd;
 use vmm_sys_util::terminal::Terminal;
 
 // 64 bit direct boot entry offset for bzImage
+#[cfg(target_arch = "x86_64")]
 const KERNEL_64BIT_ENTRY_OFFSET: u64 = 0x200;
 
 /// Errors associated with VM management
@@ -247,6 +255,7 @@ impl VmState {
 
 pub struct Vm {
     kernel: File,
+    #[cfg(target_arch = "x86_64")]
     initramfs: Option<File>,
     threads: Vec<thread::JoinHandle<()>>,
     device_manager: Arc<Mutex<DeviceManager>>,
@@ -267,12 +276,17 @@ impl Vm {
             return Err(Error::CapabilityMissing(Cap::SignalMsi));
         }
 
-        if !kvm.check_extension(Cap::TscDeadlineTimer) {
-            return Err(Error::CapabilityMissing(Cap::TscDeadlineTimer));
+        #[cfg(target_arch = "x86_64")]
+        {
+            if !kvm.check_extension(Cap::TscDeadlineTimer) {
+                return Err(Error::CapabilityMissing(Cap::TscDeadlineTimer));
+            }
         }
-
-        if !kvm.check_extension(Cap::SplitIrqchip) {
-            return Err(Error::CapabilityMissing(Cap::SplitIrqchip));
+        #[cfg(target_arch = "x86_64")]
+        {
+            if !kvm.check_extension(Cap::SplitIrqchip) {
+                return Err(Error::CapabilityMissing(Cap::SplitIrqchip));
+            }
         }
 
         let fd: VmFd;
@@ -295,16 +309,20 @@ impl Vm {
         let fd = Arc::new(fd);
 
         // Set TSS
+        #[cfg(target_arch = "x86_64")]
         fd.set_tss_address(arch::x86_64::layout::KVM_TSS_ADDRESS.raw_value() as usize)
             .map_err(Error::VmSetup)?;
 
-        // Create split irqchip
-        // Only the local APIC is emulated in kernel, both PICs and IOAPIC
-        // are not.
-        let mut cap: kvm_enable_cap = Default::default();
-        cap.cap = KVM_CAP_SPLIT_IRQCHIP;
-        cap.args[0] = ioapic::NUM_IOAPIC_PINS as u64;
-        fd.enable_cap(&cap).map_err(Error::VmSetup)?;
+        #[cfg(target_arch = "x86_64")]
+        {
+            // Create split irqchip
+            // Only the local APIC is emulated in kernel, both PICs and IOAPIC
+            // are not.
+            let mut cap: kvm_enable_cap = Default::default();
+            cap.cap = KVM_CAP_SPLIT_IRQCHIP;
+            cap.args[0] = ioapic::NUM_IOAPIC_PINS as u64;
+            fd.enable_cap(&cap).map_err(Error::VmSetup)?;
+        }
 
         Ok((kvm, fd))
     }
@@ -329,6 +347,7 @@ impl Vm {
             config.clone(),
             memory_manager.clone(),
             &exit_evt,
+            #[cfg(target_arch = "x86_64")]
             &reset_evt,
             vmm_path,
         )
@@ -348,6 +367,7 @@ impl Vm {
         let kernel = File::open(&config.lock().unwrap().kernel.as_ref().unwrap().path)
             .map_err(Error::KernelFile)?;
 
+        #[cfg(target_arch = "x86_64")]
         let initramfs = config
             .lock()
             .unwrap()
@@ -359,6 +379,7 @@ impl Vm {
 
         Ok(Vm {
             kernel,
+            #[cfg(target_arch = "x86_64")]
             initramfs,
             device_manager,
             config,
@@ -446,6 +467,7 @@ impl Vm {
         )
     }
 
+    #[cfg(target_arch = "x86_64")]
     fn load_initramfs(&mut self, guest_mem: &GuestMemoryMmap) -> Result<arch::InitramfsConfig> {
         let mut initramfs = self.initramfs.as_ref().unwrap();
         let size: usize = initramfs
@@ -468,6 +490,75 @@ impl Vm {
         Ok(arch::InitramfsConfig { address, size })
     }
 
+    #[cfg(target_arch = "aarch64")]
+    fn load_kernel(&mut self) -> Result<EntryPoint> {
+        let mut cmdline = Cmdline::new(arch::CMDLINE_MAX_SIZE);
+        cmdline
+            .insert_str(self.config.lock().unwrap().cmdline.args.clone())
+            .map_err(Error::CmdLineInsertStr)?;
+        for entry in self.device_manager.lock().unwrap().cmdline_additions() {
+            cmdline.insert_str(entry).map_err(Error::CmdLineInsertStr)?;
+        }
+
+        let guest_memory = self.memory_manager.lock().as_ref().unwrap().guest_memory();
+        let mem = guest_memory.memory();
+        let entry_addr = match linux_loader::loader::pe::PE::load(
+            mem.deref(),
+            Some(GuestAddress(arch::get_kernel_start())),
+            &mut self.kernel,
+            None,
+        ) {
+            Ok(entry_addr) => entry_addr,
+            _ => panic!("Invalid elf file"),
+        };
+
+        let entry_point_addr: GuestAddress = entry_addr.kernel_load;
+
+        Ok(EntryPoint {
+            entry_addr: entry_point_addr,
+        })
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    fn configure_system(
+        &mut self,
+        vcpus: Vec<Arc<Mutex<Vcpu>>>,
+        _entry_addr: EntryPoint,
+    ) -> Result<()> {
+        let mut cmdline = Cmdline::new(arch::CMDLINE_MAX_SIZE);
+        cmdline
+            .insert_str(self.config.lock().unwrap().cmdline.args.clone())
+            .map_err(Error::CmdLineInsertStr)?;
+        for entry in self.device_manager.lock().unwrap().cmdline_additions() {
+            cmdline.insert_str(entry).map_err(Error::CmdLineInsertStr)?;
+        }
+        let cmdline_cstring = CString::new(cmdline).map_err(Error::CmdLineCString)?;
+
+        let vcpu_mpidr = self.cpu_manager.lock().unwrap().get_mpidr(vcpus);
+        let guest_memory = self.memory_manager.lock().as_ref().unwrap().guest_memory();
+        let mem = guest_memory.memory();
+
+        let device_info = &self
+            .device_manager
+            .lock()
+            .unwrap()
+            .get_device_info()
+            .clone();
+
+        arch::configure_system(
+            &mem,
+            &cmdline_cstring,
+            vcpu_mpidr,
+            device_info,
+            self.device_manager.lock().unwrap().get_irqchip().clone(),
+            &None,
+        )
+        .map_err(Error::ConfigureSystem)?;
+
+        Ok(())
+    }
+
+    #[cfg(target_arch = "x86_64")]
     fn load_kernel(&mut self) -> Result<EntryPoint> {
         let mut cmdline = Cmdline::new(arch::CMDLINE_MAX_SIZE);
         cmdline
@@ -508,41 +599,8 @@ impl Vm {
         )
         .map_err(Error::LoadCmdLine)?;
 
-        let initramfs_config = match self.initramfs {
-            Some(_) => Some(self.load_initramfs(mem.deref())?),
-            None => None,
-        };
-
-        let boot_vcpus = self.cpu_manager.lock().unwrap().boot_vcpus();
-        let _max_vcpus = self.cpu_manager.lock().unwrap().max_vcpus();
-
-        #[allow(unused_mut, unused_assignments)]
-        let mut rsdp_addr: Option<GuestAddress> = None;
-
-        #[cfg(feature = "acpi")]
-        {
-            rsdp_addr = Some(crate::acpi::create_acpi_tables(
-                mem.deref(),
-                &self.device_manager,
-                &self.cpu_manager,
-                &self.memory_manager,
-            ));
-        }
-
         match entry_addr.setup_header {
-            Some(hdr) => {
-                arch::configure_system(
-                    &mem,
-                    arch::layout::CMDLINE_START,
-                    cmdline_cstring.to_bytes().len() + 1,
-                    &initramfs_config,
-                    boot_vcpus,
-                    Some(hdr),
-                    rsdp_addr,
-                    BootProtocol::LinuxBoot,
-                )
-                .map_err(Error::ConfigureSystem)?;
-
+            Some(_hdr) => {
                 let load_addr = entry_addr
                     .kernel_load
                     .raw_value()
@@ -552,6 +610,7 @@ impl Vm {
                 Ok(EntryPoint {
                     entry_addr: GuestAddress(load_addr),
                     protocol: BootProtocol::LinuxBoot,
+                    load_result: entry_addr,
                 })
             }
             None => {
@@ -568,6 +627,68 @@ impl Vm {
                     boot_prot = BootProtocol::LinuxBoot;
                 }
 
+                Ok(EntryPoint {
+                    entry_addr: entry_point_addr,
+                    protocol: boot_prot,
+                    load_result: entry_addr,
+                })
+            }
+        }
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    fn configure_system(
+        &mut self,
+        _vcpus: Vec<Arc<Mutex<Vcpu>>>,
+        entry_addr: EntryPoint,
+    ) -> Result<()> {
+        let mut cmdline = Cmdline::new(arch::CMDLINE_MAX_SIZE);
+        cmdline
+            .insert_str(self.config.lock().unwrap().cmdline.args.clone())
+            .map_err(Error::CmdLineInsertStr)?;
+        for entry in self.device_manager.lock().unwrap().cmdline_additions() {
+            cmdline.insert_str(entry).map_err(Error::CmdLineInsertStr)?;
+        }
+
+        let cmdline_cstring = CString::new(cmdline).map_err(Error::CmdLineCString)?;
+        let guest_memory = self.memory_manager.lock().as_ref().unwrap().guest_memory();
+        let mem = guest_memory.memory();
+
+        let initramfs_config = match self.initramfs {
+            Some(_) => Some(self.load_initramfs(mem.deref())?),
+            None => None,
+        };
+
+        let boot_vcpus = self.cpu_manager.lock().unwrap().boot_vcpus();
+
+        #[allow(unused_mut, unused_assignments)]
+        let mut rsdp_addr: Option<GuestAddress> = None;
+
+        #[cfg(feature = "acpi")]
+        {
+            rsdp_addr = Some(crate::acpi::create_acpi_tables(
+                mem.deref(),
+                &self.device_manager,
+                &self.cpu_manager,
+                &self.memory_manager,
+            ));
+        }
+
+        match entry_addr.load_result.setup_header {
+            Some(hdr) => {
+                arch::configure_system(
+                    &mem,
+                    arch::layout::CMDLINE_START,
+                    cmdline_cstring.to_bytes().len() + 1,
+                    &initramfs_config,
+                    boot_vcpus,
+                    Some(hdr),
+                    rsdp_addr,
+                    BootProtocol::LinuxBoot,
+                )
+                .map_err(Error::ConfigureSystem)?;
+            }
+            None => {
                 arch::configure_system(
                     &mem,
                     arch::layout::CMDLINE_START,
@@ -576,16 +697,12 @@ impl Vm {
                     boot_vcpus,
                     None,
                     rsdp_addr,
-                    boot_prot,
+                    entry_addr.protocol,
                 )
                 .map_err(Error::ConfigureSystem)?;
-
-                Ok(EntryPoint {
-                    entry_addr: entry_point_addr,
-                    protocol: boot_prot,
-                })
             }
         }
+        Ok(())
     }
 
     pub fn shutdown(&mut self) -> Result<()> {
@@ -967,7 +1084,37 @@ impl Vm {
         let new_state = VmState::Running;
         current_state.valid_transition(new_state)?;
 
+        // Load kernel and configure system. For ARM, FDT is created.
+        // Before arriving here, devices have been added in
+        // DeviceManager::new()
         let entry_addr = self.load_kernel()?;
+
+        // create and configure vcpus
+        let vcpus = self
+            .cpu_manager
+            .lock()
+            .unwrap()
+            .create_boot_vcpus(entry_addr.clone())
+            .map_err(Error::CpuManager)?;
+
+        // Aarch64 GIC must be created after VCPU
+        #[cfg(target_arch = "aarch64")]
+        self.device_manager
+            .lock()
+            .unwrap()
+            .create_irqchip(vcpus.len() as u64)
+            .unwrap();
+
+        // Once GIC created, register irqfd.
+        // Counterpart of X86 was done in IOAPIC setup.
+        #[cfg(target_arch = "aarch64")]
+        self.device_manager
+            .lock()
+            .unwrap()
+            .enable_interrupt_controller()
+            .unwrap();
+
+        self.configure_system(vcpus, entry_addr.clone())?;
 
         self.cpu_manager
             .lock()
@@ -1280,6 +1427,7 @@ impl Migratable for Vm {}
 mod tests {
     use super::*;
 
+    #[cfg(target_arch = "x86_64")]
     fn test_vm_state_transitions(state: VmState) {
         match state {
             VmState::Created => {
@@ -1314,27 +1462,32 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_arch = "x86_64")]
     fn test_vm_created_transitions() {
         test_vm_state_transitions(VmState::Created);
     }
 
     #[test]
+    #[cfg(target_arch = "x86_64")]
     fn test_vm_running_transitions() {
         test_vm_state_transitions(VmState::Running);
     }
 
     #[test]
+    #[cfg(target_arch = "x86_64")]
     fn test_vm_shutdown_transitions() {
         test_vm_state_transitions(VmState::Shutdown);
     }
 
     #[test]
+    #[cfg(target_arch = "x86_64")]
     fn test_vm_paused_transitions() {
         test_vm_state_transitions(VmState::Paused);
     }
 }
 
 #[allow(unused)]
+#[cfg(target_arch = "x86_64")]
 pub fn test_vm() {
     // This example based on https://lwn.net/Articles/658511/
     let code = [

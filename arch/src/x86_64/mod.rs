@@ -19,6 +19,7 @@ use linux_loader::loader::bootparam::{boot_params, setup_header};
 use linux_loader::loader::elf::start_info::{
     hvm_memmap_table_entry, hvm_modlist_entry, hvm_start_info,
 };
+use linux_loader::loader::KernelLoaderResult;
 use std::mem;
 use vm_memory::{
     Address, ByteValued, Bytes, GuestAddress, GuestMemory, GuestMemoryMmap, GuestMemoryRegion,
@@ -49,6 +50,8 @@ pub struct EntryPoint {
     pub entry_addr: GuestAddress,
     /// Specifies which boot protocol to use
     pub protocol: BootProtocol,
+    /// Additional information for the rest of the boot process
+    pub load_result: KernelLoaderResult,
 }
 
 const E820_RAM: u32 = 1;
