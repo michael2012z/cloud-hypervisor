@@ -515,6 +515,20 @@ impl Vcpu {
                     // Triple fault to trigger a reboot
                     Ok(false)
                 }
+                #[cfg(target_arch = "aarch64")]
+                VcpuExit::SystemEvent => {
+                    // On Aarch64, when the VM is shutdown, run() returns
+                    // VcpuExit::SystemEvent with reason KVM_SYSTEM_EVENT_SHUTDOWN
+                    // But now the reason field is not exposed.
+                    //
+                    // TODO: Enclose system event type and flags in VcpuExit::SystemEvent
+                    // of rust-vmm/kvm-ioctls library.
+                    //
+                    // As a temporary solution, we simply shutdown without checking
+                    // the exact reason.
+                    //
+                    Ok(false)
+                }
                 r => {
                     error!("Unexpected exit reason on vcpu run: {:?}", r);
                     Err(Error::VcpuUnhandledKvmExit)
