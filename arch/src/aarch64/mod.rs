@@ -3,16 +3,25 @@
 
 pub mod layout;
 
-use memory_model::{GuestAddress, GuestMemory};
+use crate::RegionType;
+use vm_memory::{GuestAddress, GuestMemoryMmap, GuestUsize};
 
 /// Stub function that needs to be implemented when aarch64 functionality is added.
-pub fn arch_memory_regions(size: usize) -> Vec<(GuestAddress, usize, RegionType)> {
-    vec![(GuestAddress(0), size, RegionType::Ram)]
+pub fn arch_memory_regions(size: GuestUsize) -> Vec<(GuestAddress, usize, RegionType)> {
+    vec![(GuestAddress(0), size as usize, RegionType::Ram)]
+}
+
+#[derive(Debug, Copy, Clone)]
+/// Specifies the entry point address where the guest must start
+/// executing code.
+pub struct EntryPoint {
+    /// Address in guest memory where the guest must start execution
+    pub entry_addr: GuestAddress,
 }
 
 /// Stub function that needs to be implemented when aarch64 functionality is added.
 pub fn configure_system(
-    _guest_mem: &GuestMemory,
+    _guest_mem: &GuestMemoryMmap,
     _cmdline_addr: GuestAddress,
     _cmdline_size: usize,
     _num_cpus: u8,
