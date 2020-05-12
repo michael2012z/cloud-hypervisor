@@ -191,7 +191,9 @@ pub fn vmm_thread_filter() -> Result<SeccompFilter, Error> {
     Ok(SeccompFilter::new(
         vec![
             allow_syscall(libc::SYS_accept4),
+            #[cfg(target_arch = "x86_64")]
             allow_syscall(libc::SYS_access),
+            #[cfg(target_arch = "x86_64")]
             allow_syscall(libc::SYS_arch_prctl),
             allow_syscall(libc::SYS_bind),
             allow_syscall(libc::SYS_brk),
@@ -203,6 +205,7 @@ pub fn vmm_thread_filter() -> Result<SeccompFilter, Error> {
             allow_syscall(libc::SYS_epoll_create1),
             allow_syscall(libc::SYS_epoll_ctl),
             allow_syscall(libc::SYS_epoll_pwait),
+            #[cfg(target_arch = "x86_64")]
             allow_syscall(libc::SYS_epoll_wait),
             allow_syscall(libc::SYS_eventfd2),
             allow_syscall(libc::SYS_execve),
@@ -211,9 +214,11 @@ pub fn vmm_thread_filter() -> Result<SeccompFilter, Error> {
             allow_syscall(libc::SYS_fallocate),
             allow_syscall(libc::SYS_fcntl),
             allow_syscall(libc::SYS_fdatasync),
+            #[cfg(target_arch = "x86_64")]
             allow_syscall(libc::SYS_fork),
             allow_syscall(libc::SYS_fstat),
             allow_syscall(libc::SYS_fsync),
+            #[cfg(target_arch = "x86_64")]
             allow_syscall(libc::SYS_ftruncate),
             allow_syscall(libc::SYS_futex),
             allow_syscall(libc::SYS_getpid),
@@ -231,6 +236,7 @@ pub fn vmm_thread_filter() -> Result<SeccompFilter, Error> {
             allow_syscall(libc::SYS_mremap),
             allow_syscall(libc::SYS_munmap),
             allow_syscall(libc::SYS_nanosleep),
+            #[cfg(target_arch = "x86_64")]
             allow_syscall(libc::SYS_open),
             allow_syscall(libc::SYS_openat),
             allow_syscall(libc::SYS_pipe2),
@@ -239,6 +245,7 @@ pub fn vmm_thread_filter() -> Result<SeccompFilter, Error> {
             allow_syscall(libc::SYS_prlimit64),
             allow_syscall(libc::SYS_pwrite64),
             allow_syscall(libc::SYS_read),
+            #[cfg(target_arch = "x86_64")]
             allow_syscall(libc::SYS_readlink),
             allow_syscall(libc::SYS_recvfrom),
             allow_syscall(libc::SYS_recvmsg),
@@ -259,10 +266,12 @@ pub fn vmm_thread_filter() -> Result<SeccompFilter, Error> {
                 ],
             ),
             allow_syscall(libc::SYS_socketpair),
+            #[cfg(target_arch = "x86_64")]
             allow_syscall(libc::SYS_stat),
             allow_syscall(libc::SYS_statx),
             allow_syscall(libc::SYS_tgkill),
             allow_syscall(libc::SYS_tkill),
+            #[cfg(target_arch = "x86_64")]
             allow_syscall(libc::SYS_unlink),
             allow_syscall(libc::SYS_wait4),
             allow_syscall(libc::SYS_write),
@@ -285,6 +294,7 @@ pub fn api_thread_filter() -> Result<SeccompFilter, Error> {
             allow_syscall(libc::SYS_epoll_create1),
             allow_syscall(libc::SYS_epoll_ctl),
             allow_syscall(libc::SYS_epoll_pwait),
+            #[cfg(target_arch = "x86_64")]
             allow_syscall(libc::SYS_epoll_wait),
             allow_syscall(libc::SYS_exit),
             allow_syscall(libc::SYS_futex),
