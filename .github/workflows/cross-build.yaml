@@ -23,11 +23,13 @@ jobs:
             target: ${{ matrix.target }}
             override: true
       - name: Install arm64 libfdt
-        run: wget http://ftp.us.debian.org/debian/pool/main/d/device-tree-compiler/libfdt1_1.6.0-1_arm64.deb && dpkg-deb -xv libfdt1_1.6.0-1_arm64.deb ./tlibfdt1 && ls && sudo ls / && echo "libfdt installed" 
+        run: wget http://ftp.us.debian.org/debian/pool/main/d/device-tree-compiler/libfdt1_1.6.0-1_arm64.deb && dpkg-deb -xv libfdt1_1.6.0-1_arm64.deb ./tlibfdt1 && sudo mkdir /tmmmp && sudo cp ./tlibfdt1/usr/lib/aarch64-linux-gnu/libfdt-1.6.0.so /tmmmp/libfdt.so && echo "libfdt installed" 
       - name: Disable "with-serde" in kvm-bindings
         run: sed -i 's/"with-serde",\ //g' vmm/Cargo.toml
       - name: Build
         uses: actions-rs/cargo@v1
+        env:
+          RUSTFLAGS: -C link-arg="-L /tmmmp"
         with:
           use-cross: true
           command: build
