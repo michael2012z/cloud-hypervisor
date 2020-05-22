@@ -23,7 +23,7 @@ jobs:
             target: ${{ matrix.target }}
             override: true
       - name: test
-        run: dpkg --add-architecture arm64 && apt update && apt install libfdt-dev:arm64 -y
+        run: sudo dpkg --add-architecture arm64 && sudo apt update && sudo apt install libfdt-dev:arm64 -y
       - name: Disable "with-serde" in kvm-bindings
         run: sed -i 's/"with-serde",\ //g' vmm/Cargo.toml
       - name: Build
