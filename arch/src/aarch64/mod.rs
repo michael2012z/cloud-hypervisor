@@ -5,7 +5,19 @@ pub mod layout;
 
 use crate::RegionType;
 use kvm_ioctls::*;
-use vm_memory::{GuestAddress, GuestMemoryMmap, GuestUsize};
+use vm_memory::{GuestAddress, GuestMemoryAtomic, GuestMemoryMmap, GuestUsize};
+
+#[derive(Debug)]
+pub enum Error {
+    /// Error configuring VCPU
+    VcpuConfiguration,
+}
+
+impl From<Error> for super::Error {
+    fn from(e: Error) -> super::Error {
+        super::Error::AArch64Setup(e)
+    }
+}
 
 /// Stub function that needs to be implemented when aarch64 functionality is added.
 pub fn arch_memory_regions(size: GuestUsize) -> Vec<(GuestAddress, usize, RegionType)> {
@@ -18,6 +30,15 @@ pub fn arch_memory_regions(size: GuestUsize) -> Vec<(GuestAddress, usize, Region
 pub struct EntryPoint {
     /// Address in guest memory where the guest must start execution
     pub entry_addr: GuestAddress,
+}
+
+pub fn configure_vcpu(
+    #[allow(unused_variables)] fd: &VcpuFd,
+    #[allow(unused_variables)] id: u8,
+    #[allow(unused_variables)] kernel_entry_point: Option<EntryPoint>,
+    #[allow(unused_variables)] vm_memory: &GuestMemoryAtomic<GuestMemoryMmap>,
+) -> super::Result<()> {
+    unimplemented!();
 }
 
 /// Stub function that needs to be implemented when aarch64 functionality is added.
