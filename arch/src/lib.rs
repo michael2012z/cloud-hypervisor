@@ -13,6 +13,9 @@
     clippy::cast_ptr_alignment
 )]
 
+#[macro_use]
+extern crate log;
+
 extern crate byteorder;
 extern crate kvm_bindings;
 extern crate kvm_ioctls;

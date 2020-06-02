@@ -3,7 +3,7 @@
 
 use std::{boxed::Box, result};
 
-use kvm_ioctls::DeviceFd;
+use kvm_ioctls::{DeviceFd, VmFd};
 
 use super::gic::{Error, GICDevice};
 
@@ -89,7 +89,7 @@ impl GICDevice for GICv2 {
         })
     }
 
-    fn init_device_attributes(gic_device: &Box<dyn GICDevice>) -> Result<()> {
+    fn init_device_attributes(_vm: &VmFd, gic_device: &Box<dyn GICDevice>) -> Result<()> {
         /* Setting up the distributor attribute.
         We are placing the GIC below 1GB so we need to substract the size of the distributor. */
         Self::set_device_attribute(
