@@ -87,7 +87,7 @@ use vm_virtio::{DmaRemapping, IommuMapping, VirtioDeviceType, VirtioIommuRemappi
 use vm_virtio::{VirtioSharedMemory, VirtioSharedMemoryList};
 use vmm_sys_util::eventfd::EventFd;
 
-#[cfg(feature = "mmio_support")]
+#[cfg(any(feature = "mmio_support", target_arch = "aarch64"))]
 const MMIO_LEN: u64 = 0x1000;
 
 #[cfg(feature = "pci_support")]
@@ -449,6 +449,7 @@ impl DeviceRelocation for AddressManager {
         region_type: PciBarRegionType,
     ) -> std::result::Result<(), std::io::Error> {
         match region_type {
+            #[cfg(target_arch = "x86_64")]
             PciBarRegionType::IORegion => {
                 // Update system allocator
                 self.allocator
@@ -2427,6 +2428,7 @@ impl DeviceManager {
 
         pci.register_mapping(
             vfio_pci_device,
+            #[cfg(target_arch = "x86_64")]
             self.address_manager.io_bus.as_ref(),
             self.address_manager.mmio_bus.as_ref(),
             bars,

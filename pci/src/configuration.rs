@@ -17,6 +17,7 @@ const STATUS_REG: usize = 1;
 const STATUS_REG_CAPABILITIES_USED_MASK: u32 = 0x0010_0000;
 const BAR0_REG: usize = 4;
 const ROM_BAR_REG: usize = 12;
+#[cfg(target_arch = "x86_64")]
 const BAR_IO_ADDR_MASK: u32 = 0xffff_fffc;
 const BAR_MEM_ADDR_MASK: u32 = 0xffff_fff0;
 const ROM_BAR_ADDR_MASK: u32 = 0xffff_f800;
@@ -315,6 +316,7 @@ pub struct PciConfiguration {
 #[derive(Copy, Clone, PartialEq, Serialize, Deserialize)]
 pub enum PciBarRegionType {
     Memory32BitRegion = 0,
+    #[cfg(target_arch = "x86_64")]
     IORegion = 0x01,
     Memory64BitRegion = 0x04,
 }
@@ -579,7 +581,18 @@ impl PciConfiguration {
             .checked_add(config.size - 1)
             .ok_or_else(|| Error::BarAddressInvalid(config.addr, config.size))?;
         match config.region_type {
-            PciBarRegionType::Memory32BitRegion | PciBarRegionType::IORegion => {
+            #[cfg(target_arch = "x86_64")]
+            PciBarRegionType::IORegion => {
+                if end_addr > u64::from(u32::max_value()) {
+                    return Err(Error::BarAddressInvalid(config.addr, config.size));
+                }
+
+                // Encode the BAR size as expected by the software running in
+                // the guest.
+                self.bar_size[config.reg_idx] =
+                    encode_32_bits_bar_size(config.size as u32).ok_or(Error::Encode32BarSize)?;
+            }
+            PciBarRegionType::Memory32BitRegion => {
                 if end_addr > u64::from(u32::max_value()) {
                     return Err(Error::BarAddressInvalid(config.addr, config.size));
                 }
@@ -621,6 +634,7 @@ impl PciConfiguration {
                 BAR_MEM_ADDR_MASK,
                 config.prefetchable as u32 | config.region_type as u32,
             ),
+            #[cfg(target_arch = "x86_64")]
             PciBarRegionType::IORegion => (BAR_IO_ADDR_MASK, config.region_type as u32),
         };
 
