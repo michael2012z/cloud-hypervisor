@@ -16,7 +16,10 @@ use super::super::DeviceType;
 use super::super::InitrdConfig;
 use super::get_fdt_addr;
 use super::gic::GICDevice;
-use super::layout::FDT_MAX_SIZE;
+use super::layout::{
+    FDT_MAX_SIZE, PCI_DEVICES_MAPPED_IO_SIZE, PCI_DEVICES_MAPPED_IO_START, PCI_MMCONFIG_SIZE,
+    PCI_MMCONFIG_START,
+};
 use crate::aarch64::fdt::Error::CstringFDTTransform;
 use vm_memory::{Address, Bytes, GuestAddress, GuestMemory, GuestMemoryError, GuestMemoryMmap};
 
@@ -93,6 +96,7 @@ pub fn create_fdt<T: DeviceInfoForFDT + Clone + Debug>(
     device_info: &HashMap<(DeviceType, String), T>,
     gic_device: &Box<dyn GICDevice>,
     initrd: &Option<InitrdConfig>,
+    pci_space_address: &Option<(u64, u64)>,
 ) -> Result<Vec<u8>> {
     // Alocate stuff necessary for the holding the blob.
     let mut fdt = vec![0; FDT_MAX_SIZE];
@@ -121,6 +125,9 @@ pub fn create_fdt<T: DeviceInfoForFDT + Clone + Debug>(
     create_clock_node(&mut fdt)?;
     create_psci_node(&mut fdt)?;
     create_devices_node(&mut fdt, device_info)?;
+    if let Some((pci_device_base, pci_device_size)) = pci_space_address {
+        create_pci_nodes(&mut fdt, *pci_device_base, *pci_device_size)?;
+    }
 
     // End Header node.
     append_end_node(&mut fdt)?;
@@ -535,6 +542,49 @@ fn create_devices_node<T: DeviceInfoForFDT + Clone + Debug>(
     for ordered_device_info in ordered_virtio_device.drain(..) {
         create_virtio_node(fdt, ordered_device_info)?;
     }
+
+    Ok(())
+}
+
+fn create_pci_nodes(fdt: &mut Vec<u8>, pci_device_base: u64, pci_device_size: u64) -> Result<()> {
+    // Add devicetree nodes describing a PCI generic host controller.
+    // See Documentation/devicetree/bindings/pci/host-generic-pci.txt in the kernel
+    // and "PCI Bus Binding to IEEE Std 1275-1994".
+    let ranges = generate_prop32(&[
+        // mmio addresses
+        0x3000000,                                  // (ss = 11: 64-bit memory space)
+        (PCI_DEVICES_MAPPED_IO_START >> 32) as u32, // PCI address
+        PCI_DEVICES_MAPPED_IO_START as u32,
+        (PCI_DEVICES_MAPPED_IO_START >> 32) as u32, // CPU address
+        PCI_DEVICES_MAPPED_IO_START as u32,
+        (PCI_DEVICES_MAPPED_IO_SIZE >> 32) as u32, // size
+        PCI_DEVICES_MAPPED_IO_SIZE as u32,
+        // device addresses
+        0x3000000,                      // (ss = 11: 64-bit memory space)
+        (pci_device_base >> 32) as u32, // PCI address
+        pci_device_base as u32,
+        (pci_device_base >> 32) as u32, // CPU address
+        pci_device_base as u32,
+        (pci_device_size >> 32) as u32, // size
+        pci_device_size as u32,
+    ]);
+    let bus_range = generate_prop32(&[0, 0]); // Only bus 0
+    let reg = generate_prop64(&[PCI_MMCONFIG_START.0, PCI_MMCONFIG_SIZE]);
+
+    append_begin_node(fdt, "pci")?;
+    append_property_string(fdt, "compatible", "pci-host-cam-generic")?;
+    append_property_string(fdt, "device_type", "pci")?;
+    append_property(fdt, "ranges", &ranges)?;
+    append_property(fdt, "bus-range", &bus_range)?;
+    append_property_u32(fdt, "#address-cells", 3)?;
+    append_property_u32(fdt, "#size-cells", 2)?;
+    append_property(fdt, "reg", &reg)?;
+    append_property_u32(fdt, "#interrupt-cells", 1)?;
+    append_property_null(fdt, "interrupt-map")?;
+    append_property_null(fdt, "interrupt-map-mask")?;
+    append_property_null(fdt, "dma-coherent")?;
+    append_property_u32(fdt, "msi-parent", MSI_PHANDLE)?;
+    append_end_node(fdt)?;
 
     Ok(())
 }

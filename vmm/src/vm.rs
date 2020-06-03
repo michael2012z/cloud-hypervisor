@@ -545,6 +545,26 @@ impl Vm {
             .get_device_info()
             .clone();
 
+        let pci_space: Option<(u64, u64)> = if cfg!(feature = "pci_support") {
+            let pci_space_start: GuestAddress = self
+                .memory_manager
+                .lock()
+                .as_ref()
+                .unwrap()
+                .start_of_device_area();
+
+            let pci_space_end: GuestAddress = self
+                .memory_manager
+                .lock()
+                .as_ref()
+                .unwrap()
+                .end_of_device_area();
+
+            Some((pci_space_start.0, pci_space_end.0 - pci_space_start.0 + 1))
+        } else {
+            None
+        };
+
         arch::configure_system(
             &mem,
             &cmdline_cstring,
@@ -552,6 +572,7 @@ impl Vm {
             device_info,
             self.device_manager.lock().unwrap().get_irqchip().clone(),
             &None,
+            &pci_space,
         )
         .map_err(Error::ConfigureSystem)?;
 

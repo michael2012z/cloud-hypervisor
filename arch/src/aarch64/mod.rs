@@ -79,14 +79,26 @@ pub fn arch_memory_regions(size: GuestUsize) -> Vec<(GuestAddress, usize, Region
     regions
 }
 
+fn dump_dtb(dtb: Vec<u8>) {
+    use std::fs;
+    use std::io::Write;
+    use std::path::PathBuf;
+
+    let path = PathBuf::from("./");
+    let mut output = fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .open(path.join("output.dtb"))
+        .unwrap();
+    output.write_all(&dtb).unwrap();
+}
+
 /// Configures the system and should be called once per vm before starting vcpu threads.
 ///
 /// # Arguments
 ///
 /// * `guest_mem` - The memory to be used by the guest.
 /// * `num_cpus` - Number of virtual CPUs the guest will have.
-#[allow(clippy::too_many_arguments)]
-#[allow(unused_variables)]
 pub fn configure_system<T: DeviceInfoForFDT + Clone + Debug>(
     guest_mem: &GuestMemoryMmap,
     cmdline_cstring: &CStr,
@@ -94,6 +106,7 @@ pub fn configure_system<T: DeviceInfoForFDT + Clone + Debug>(
     device_info: &HashMap<(DeviceType, String), T>,
     gic_device: &Box<dyn GICDevice>,
     initrd: &Option<super::InitrdConfig>,
+    pci_space_address: &Option<(u64, u64)>,
 ) -> super::Result<()> {
     let dtb = fdt::create_fdt(
         guest_mem,
@@ -102,8 +115,11 @@ pub fn configure_system<T: DeviceInfoForFDT + Clone + Debug>(
         device_info,
         gic_device,
         initrd,
+        pci_space_address,
     )
     .map_err(Error::SetupFDT)?;
+
+    dump_dtb(dtb);
 
     Ok(())
 }
