@@ -795,7 +795,8 @@ impl PciDevice for VirtioPciDevice {
                 PciBarRegionType::Memory64BitRegion => {
                     allocator.free_mmio_addresses(addr, length);
                 }
-                _ => error!("Unexpected PCI bar type"),
+                #[cfg(target_arch = "x86_64")]
+                PciBarRegionType::IORegion => error!("Unexpected PCI bar type"),
             }
         }
         Ok(())

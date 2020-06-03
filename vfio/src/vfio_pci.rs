@@ -861,11 +861,9 @@ impl PciDevice for VfioPciDevice {
     ) -> std::result::Result<(), PciDeviceError> {
         for region in self.mmio_regions.iter() {
             match region.type_ {
+                #[cfg(target_arch = "x86_64")]
                 PciBarRegionType::IORegion => {
-                    #[cfg(target_arch = "x86_64")]
                     allocator.free_io_addresses(region.start, region.length);
-                    #[cfg(target_arch = "aarch64")]
-                    panic!("Impossible for Aarch64.");
                 }
                 PciBarRegionType::Memory32BitRegion => {
                     allocator.free_mmio_hole_addresses(region.start, region.length);
