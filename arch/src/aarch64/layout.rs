@@ -61,7 +61,7 @@ pub const PCI_DEVICES_MAPPED_IO_SIZE: u64 = 0x3000_0000;
 
 /// PCI MMCONFIG space (start: after the device space at 1 GiB, length: 256MiB)
 pub const PCI_MMCONFIG_START: GuestAddress = GuestAddress(0x4000_0000);
-pub const PCI_MMCONFIG_SIZE: GuestUsize = (256 << 20);
+pub const PCI_MMCONFIG_SIZE: GuestUsize = 256 << 20;
 
 /// Start of RAM on 64 bit ARM.
 pub const RAM_64BIT_START: u64 = 0x8000_0000;
