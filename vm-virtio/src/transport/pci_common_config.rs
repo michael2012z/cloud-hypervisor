@@ -109,7 +109,10 @@ impl VirtioPciCommonConfig {
     }
 
     fn write_common_config_byte(&mut self, offset: u64, value: u8) {
-        debug!("write_common_config_byte: offset 0x{:x}", offset);
+        debug!(
+            "write_common_config_byte: offset 0x{:x}, value 0x{:x}",
+            offset, value
+        );
         match offset {
             0x14 => self.driver_status = value,
             _ => {

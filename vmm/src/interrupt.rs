@@ -197,6 +197,7 @@ impl InterruptSourceGroup for MsiInterruptGroup {
     }
 
     fn trigger(&self, index: InterruptIndex) -> Result<()> {
+        debug!("flag ---");
         if let Some(route) = self.irq_routes.get(&index) {
             return route.irq_fd.write(1);
         }
@@ -293,6 +294,7 @@ impl LegacyUserspaceInterruptGroup {
 
 impl InterruptSourceGroup for LegacyUserspaceInterruptGroup {
     fn trigger(&self, _index: InterruptIndex) -> Result<()> {
+        debug!("flag ---");
         self.ioapic
             .lock()
             .unwrap()

@@ -617,6 +617,7 @@ impl VirtioInterrupt for VirtioInterruptMsix {
         int_type: &VirtioInterruptType,
         queue: Option<&Queue>,
     ) -> std::result::Result<(), std::io::Error> {
+        debug!("flag ---");
         let vector = match int_type {
             VirtioInterruptType::Config => self.config_vector.load(Ordering::SeqCst),
             VirtioInterruptType::Queue => {
@@ -629,6 +630,7 @@ impl VirtioInterrupt for VirtioInterruptMsix {
         };
 
         if vector == VIRTIO_MSI_NO_VECTOR {
+            debug!("flag ---");
             return Ok(());
         }
 
@@ -640,15 +642,18 @@ impl VirtioInterrupt for VirtioInterruptMsix {
         // Instead, the Pending Bit Array table is updated to reflect there
         // is a pending interrupt for this specific vector.
         if config.masked() || entry.masked() {
+            debug!("flag ---");
             config.set_pba_bit(vector, false);
             return Ok(());
         }
+        debug!("flag ---");
 
         self.interrupt_source_group
             .trigger(vector as InterruptIndex)
     }
 
     fn notifier(&self, int_type: &VirtioInterruptType, queue: Option<&Queue>) -> Option<&EventFd> {
+        debug!("flag ---");
         let vector = match int_type {
             VirtioInterruptType::Config => self.config_vector.load(Ordering::SeqCst),
             VirtioInterruptType::Queue => {
@@ -949,10 +954,12 @@ impl PciDevice for VirtioPciDevice {
 
 impl BusDevice for VirtioPciDevice {
     fn read(&mut self, base: u64, offset: u64, data: &mut [u8]) {
+        debug!("read: device id {}", self.id.clone());
         self.read_bar(base, offset, data)
     }
 
     fn write(&mut self, base: u64, offset: u64, data: &[u8]) {
+        debug!("write: device id {}", self.id.clone());
         self.write_bar(base, offset, data)
     }
 }
