@@ -4,7 +4,6 @@
 //
 
 use devices::interrupt_controller::InterruptController;
-
 use std::collections::HashMap;
 use std::io;
 use std::mem::size_of;
@@ -111,6 +110,7 @@ pub struct MsiInterruptGroup<E> {
     vm: Arc<dyn hypervisor::Vm>,
     gsi_msi_routes: Arc<Mutex<HashMap<u32, RoutingEntry<E>>>>,
     irq_routes: HashMap<InterruptIndex, InterruptRoute>,
+    devid_required: AtomicBool,
 }
 
 pub trait MsiInterruptGroupOps {
@@ -118,7 +118,11 @@ pub trait MsiInterruptGroupOps {
 }
 
 pub trait RoutingEntryExt {
-    fn make_entry(gsi: u32, config: &InterruptSourceConfig) -> Result<Box<Self>>;
+    fn make_entry(
+        gsi: u32,
+        config: &InterruptSourceConfig,
+        devid_required: bool,
+    ) -> Result<Box<Self>>;
 }
 
 impl<E> MsiInterruptGroup<E> {
@@ -126,11 +130,13 @@ impl<E> MsiInterruptGroup<E> {
         vm: Arc<dyn hypervisor::Vm>,
         gsi_msi_routes: Arc<Mutex<HashMap<u32, RoutingEntry<E>>>>,
         irq_routes: HashMap<InterruptIndex, InterruptRoute>,
+        devid_required: AtomicBool,
     ) -> Self {
         MsiInterruptGroup {
             vm,
             gsi_msi_routes,
             irq_routes,
+            devid_required,
         }
     }
 }
@@ -142,6 +148,10 @@ where
     MsiInterruptGroup<E>: MsiInterruptGroupOps,
 {
     fn enable(&self) -> Result<()> {
+        self.devid_required.store(
+            self.vm.check_extension(hypervisor::Cap::MsiDevid),
+            Ordering::SeqCst,
+        );
         for (_, route) in self.irq_routes.iter() {
             route.enable(&self.vm)?;
         }
@@ -178,7 +188,11 @@ where
 
     fn update(&self, index: InterruptIndex, config: InterruptSourceConfig) -> Result<()> {
         if let Some(route) = self.irq_routes.get(&index) {
-            let entry = RoutingEntry::<_>::make_entry(route.gsi, &config)?;
+            let entry = RoutingEntry::<_>::make_entry(
+                route.gsi,
+                &config,
+                self.devid_required.load(Ordering::SeqCst),
+            )?;
             self.gsi_msi_routes
                 .lock()
                 .unwrap()
@@ -343,6 +357,7 @@ where
             self.vm.clone(),
             self.gsi_msi_routes.clone(),
             irq_routes,
+            AtomicBool::new(false),
         ))))
     }
 
@@ -353,6 +368,7 @@ where
 
 pub mod kvm {
     use super::*;
+    use hypervisor::kvm::KVM_MSI_VALID_DEVID;
     use hypervisor::kvm::{kvm_irq_routing, kvm_irq_routing_entry, KVM_IRQ_ROUTING_MSI};
 
     type KvmMsiInterruptGroup = MsiInterruptGroup<kvm_irq_routing_entry>;
@@ -360,7 +376,11 @@ pub mod kvm {
     pub type KvmMsiInterruptManager = MsiInterruptManager<kvm_irq_routing_entry>;
 
     impl RoutingEntryExt for KvmRoutingEntry {
-        fn make_entry(gsi: u32, config: &InterruptSourceConfig) -> Result<Box<Self>> {
+        fn make_entry(
+            gsi: u32,
+            config: &InterruptSourceConfig,
+            devid_required: bool,
+        ) -> Result<Box<Self>> {
             if let InterruptSourceConfig::MsiIrq(cfg) = &config {
                 let mut kvm_route = kvm_irq_routing_entry {
                     gsi,
@@ -371,6 +391,11 @@ pub mod kvm {
                 kvm_route.u.msi.address_lo = cfg.low_addr;
                 kvm_route.u.msi.address_hi = cfg.high_addr;
                 kvm_route.u.msi.data = cfg.data;
+
+                if devid_required {
+                    kvm_route.flags = KVM_MSI_VALID_DEVID;
+                    kvm_route.u.msi.__bindgen_anon_1.devid = cfg.devid;
+                }
 
                 let kvm_entry = KvmRoutingEntry {
                     route: kvm_route,
