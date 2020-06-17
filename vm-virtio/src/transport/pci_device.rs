@@ -335,6 +335,7 @@ impl VirtioPciDevice {
         msix_num: u16,
         iommu_mapping_cb: Option<Arc<VirtioIommuRemapping>>,
         interrupt_manager: &Arc<dyn InterruptManager<GroupConfig = MsiIrqGroupConfig>>,
+        #[cfg(target_arch = "aarch64")] pci_device_bdf: u32,
     ) -> Result<Self> {
         let device_clone = device.clone();
         let locked_device = device_clone.lock().unwrap();
@@ -363,6 +364,8 @@ impl VirtioPciDevice {
             let msix_config = Arc::new(Mutex::new(MsixConfig::new(
                 msix_num,
                 interrupt_source_group.clone(),
+                #[cfg(target_arch = "aarch64")]
+                pci_device_bdf,
             )));
             let msix_config_clone = msix_config.clone();
             (Some(msix_config), Some(msix_config_clone))

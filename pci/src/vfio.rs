@@ -363,7 +363,12 @@ impl VfioPciDevice {
             })
             .unwrap();
 
-        let msix_config = MsixConfig::new(msix_cap.table_size(), interrupt_source_group.clone());
+        let msix_config = MsixConfig::new(
+            msix_cap.table_size(),
+            interrupt_source_group.clone(),
+            #[cfg(target_arch = "aarch64")]
+            0,
+        );
 
         self.interrupt.msix = Some(VfioMsix {
             bar: msix_config,

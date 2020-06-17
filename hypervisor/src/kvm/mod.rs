@@ -45,6 +45,9 @@ use crate::arch::x86::NUM_IOAPIC_PINS;
 #[cfg(target_arch = "aarch64")]
 pub mod aarch64;
 
+#[cfg(target_arch = "aarch64")]
+pub use kvm_bindings::KVM_MSI_VALID_DEVID;
+
 pub use kvm_bindings;
 pub use kvm_bindings::{
     kvm_create_device, kvm_device_type_KVM_DEV_TYPE_VFIO, kvm_irq_routing, kvm_irq_routing_entry,

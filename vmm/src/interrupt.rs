@@ -4,8 +4,9 @@
 //
 
 use devices::interrupt_controller::InterruptController;
+#[cfg(target_arch = "aarch64")]
+use hypervisor::kvm::KVM_MSI_VALID_DEVID;
 use hypervisor::kvm::{kvm_irq_routing, kvm_irq_routing_entry, KVM_IRQ_ROUTING_MSI};
-
 use std::collections::HashMap;
 use std::io;
 use std::mem::size_of;
@@ -227,6 +228,19 @@ impl InterruptSourceGroup for KvmMsiInterruptGroup {
                 kvm_route.u.msi.address_lo = cfg.low_addr;
                 kvm_route.u.msi.address_hi = cfg.high_addr;
                 kvm_route.u.msi.data = cfg.data;
+
+                #[cfg(target_arch = "aarch64")]
+                {
+                    // TODO:
+                    // Need to check Cap KVM_CAP_MSI_DEVID to determine whether devid is requred.
+                    // According to kernel doc Documentation/virtual/kvm/api.txt, "if this capability is not available,
+                    // userspace should never set the KVM_MSI_VALID_DEVID flag as the ioctl might fail".
+                    // However the Cap KVM_CAP_MSI_DEVID is not supported by kvm-ioctls yet.
+                    // Setting them unconditionally is a temporary solution, should be replaced once kvm-ioctls ready.
+                    // The code was tested on GICv3 which should be the most common case for modern hardware.
+                    kvm_route.flags = KVM_MSI_VALID_DEVID;
+                    kvm_route.u.msi.__bindgen_anon_1.devid = cfg.devid;
+                }
 
                 let kvm_entry = KvmRoutingEntry {
                     kvm_route,

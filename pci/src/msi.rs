@@ -201,6 +201,8 @@ impl MsiConfig {
                     high_addr: self.cap.msg_addr_hi,
                     low_addr: self.cap.msg_addr_lo,
                     data: self.cap.msg_data as u32,
+                    #[cfg(target_arch = "aarch64")]
+                    devid: 0,
                 };
 
                 if let Err(e) = self

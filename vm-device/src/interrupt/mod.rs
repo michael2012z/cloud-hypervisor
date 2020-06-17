@@ -75,6 +75,7 @@ pub struct LegacyIrqSourceConfig {}
 /// Configuration data for MSI/MSI-X interrupts.
 ///
 /// On x86 platforms, these interrupts are vectors delivered directly to the LAPIC.
+/// On AArch64 platform, an additional field "devid" is required for MSI delivery.
 #[derive(Copy, Clone, Debug, Default)]
 pub struct MsiIrqSourceConfig {
     /// High address to delivery message signaled interrupt.
@@ -83,6 +84,9 @@ pub struct MsiIrqSourceConfig {
     pub low_addr: u32,
     /// Data to write to delivery message signaled interrupt.
     pub data: u32,
+    #[cfg(target_arch = "aarch64")]
+    /// Unique ID of the device to delivery message signaled interrupt.
+    pub devid: u32,
 }
 
 /// Configuration data for an interrupt source.
