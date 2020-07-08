@@ -5,8 +5,8 @@ use kvm_ioctls::DeviceFd;
 use std::sync::Arc;
 use std::{boxed::Box, result};
 
-use super::gicv2::GICv2;
-use super::gicv3::GICv3;
+use super::gicv2::kvm::KvmGICv2;
+use super::gicv3::kvm::KvmGICv3;
 
 /// Errors thrown while setting up the GIC.
 #[derive(Debug)]
@@ -18,10 +18,26 @@ pub enum Error {
 }
 type Result<T> = result::Result<T, Error>;
 
+pub trait GICDeviceOps {
+    fn init_device_attributes(gic_device: &Box<dyn GICDevice>) -> Result<()>;
+}
+
+pub trait GICDeviceCommonOps<T> {
+    /// Initialize a GIC device
+    fn init_device(vm: &Arc<dyn hypervisor::Vm>) -> Result<T>;
+
+    /// Set a GIC device attribute
+    fn set_device_attribute(fd: &T, group: u32, attr: u64, addr: u64, flags: u32) -> Result<()>;
+
+    /// Finalize the setup of a GIC device
+    fn finalize_device(gic_device: &Box<dyn GICDevice>) -> Result<()>;
+}
+
+// Michael: T was DeviceFd
 /// Trait for GIC devices.
-pub trait GICDevice: Send + Sync {
+pub trait GICDevice<T>: Send + Sync + GICDeviceOps + GICDeviceCommonOps<T> {
     /// Returns the file descriptor of the GIC device
-    fn device_fd(&self) -> &DeviceFd;
+    fn device_fd(&self) -> &T;
 
     /// Returns an array with GIC device properties
     fn device_properties(&self) -> &[u64];
@@ -41,83 +57,9 @@ pub trait GICDevice: Send + Sync {
         Self: Sized;
 
     /// Create the GIC device object
-    fn create_device(fd: DeviceFd, vcpu_count: u64) -> Box<dyn GICDevice>
+    fn create_device(fd: T, vcpu_count: u64) -> Box<dyn GICDevice>
     where
         Self: Sized;
-
-    /// Setup the device-specific attributes
-    fn init_device_attributes(gic_device: &Box<dyn GICDevice>) -> Result<()>
-    where
-        Self: Sized;
-
-    /// Initialize a GIC device
-    fn init_device(vm: &Arc<dyn hypervisor::Vm>) -> Result<DeviceFd>
-    where
-        Self: Sized,
-    {
-        let mut gic_device = kvm_bindings::kvm_create_device {
-            type_: Self::version(),
-            fd: 0,
-            flags: 0,
-        };
-
-        vm.create_device(&mut gic_device).map_err(Error::CreateGIC)
-    }
-
-    /// Set a GIC device attribute
-    fn set_device_attribute(
-        fd: &DeviceFd,
-        group: u32,
-        attr: u64,
-        addr: u64,
-        flags: u32,
-    ) -> Result<()>
-    where
-        Self: Sized,
-    {
-        let attr = kvm_bindings::kvm_device_attr {
-            group: group,
-            attr: attr,
-            addr: addr,
-            flags: flags,
-        };
-        fd.set_device_attr(&attr)
-            .map_err(Error::SetDeviceAttribute)?;
-
-        Ok(())
-    }
-
-    /// Finalize the setup of a GIC device
-    fn finalize_device(gic_device: &Box<dyn GICDevice>) -> Result<()>
-    where
-        Self: Sized,
-    {
-        /* We need to tell the kernel how many irqs to support with this vgic.
-         * See the `layout` module for details.
-         */
-        let nr_irqs: u32 = super::layout::IRQ_MAX - super::layout::IRQ_BASE + 1;
-        let nr_irqs_ptr = &nr_irqs as *const u32;
-        Self::set_device_attribute(
-            gic_device.device_fd(),
-            kvm_bindings::KVM_DEV_ARM_VGIC_GRP_NR_IRQS,
-            0,
-            nr_irqs_ptr as u64,
-            0,
-        )?;
-
-        /* Finalize the GIC.
-         * See https://code.woboq.org/linux/linux/virt/kvm/arm/vgic/vgic-kvm-device.c.html#211.
-         */
-        Self::set_device_attribute(
-            gic_device.device_fd(),
-            kvm_bindings::KVM_DEV_ARM_VGIC_GRP_CTRL,
-            u64::from(kvm_bindings::KVM_DEV_ARM_VGIC_CTRL_INIT),
-            0,
-            0,
-        )?;
-
-        Ok(())
-    }
 
     /// Method to initialize the GIC device
     fn new(vm: &Arc<dyn hypervisor::Vm>, vcpu_count: u64) -> Result<Box<dyn GICDevice>>
@@ -136,12 +78,88 @@ pub trait GICDevice: Send + Sync {
     }
 }
 
-/// Create a GIC device.
-///
-/// It will try to create by default a GICv3 device. If that fails it will try
-/// to fall-back to a GICv2 device.
-pub fn create_gic(vm: &Arc<dyn hypervisor::Vm>, vcpu_count: u64) -> Result<Box<dyn GICDevice>> {
-    GICv3::new(vm, vcpu_count).or_else(|_| GICv2::new(vm, vcpu_count))
+pub mod kvm {
+    use super::*;
+    pub type KvmGIC = GICDevice<DeviceFd>;
+
+    impl GICDeviceCommonOps for KvmGIC {
+        /// Initialize a GIC device
+        fn init_device(vm: &Arc<dyn hypervisor::Vm>) -> Result<DeviceFd>
+        where
+            Self: Sized,
+        {
+            let mut gic_device = kvm_bindings::kvm_create_device {
+                type_: Self::version(),
+                fd: 0,
+                flags: 0,
+            };
+
+            vm.create_device(&mut gic_device).map_err(Error::CreateGIC)
+        }
+
+        /// Set a GIC device attribute
+        fn set_device_attribute(
+            fd: &DeviceFd,
+            group: u32,
+            attr: u64,
+            addr: u64,
+            flags: u32,
+        ) -> Result<()>
+        where
+            Self: Sized,
+        {
+            let attr = kvm_bindings::kvm_device_attr {
+                group: group,
+                attr: attr,
+                addr: addr,
+                flags: flags,
+            };
+            fd.set_device_attr(&attr)
+                .map_err(Error::SetDeviceAttribute)?;
+
+            Ok(())
+        }
+
+        /// Finalize the setup of a GIC device
+        fn finalize_device(gic_device: &Box<dyn GICDevice>) -> Result<()>
+        where
+            Self: Sized,
+        {
+            /* We need to tell the kernel how many irqs to support with this vgic.
+             * See the `layout` module for details.
+             */
+            let nr_irqs: u32 = super::super::layout::IRQ_MAX - super::super::layout::IRQ_BASE + 1;
+            let nr_irqs_ptr = &nr_irqs as *const u32;
+            Self::set_device_attribute(
+                gic_device.device_fd(),
+                kvm_bindings::KVM_DEV_ARM_VGIC_GRP_NR_IRQS,
+                0,
+                nr_irqs_ptr as u64,
+                0,
+            )?;
+
+            /* Finalize the GIC.
+             * See https://code.woboq.org/linux/linux/virt/kvm/arm/vgic/vgic-kvm-device.c.html#211.
+             */
+            Self::set_device_attribute(
+                gic_device.device_fd(),
+                kvm_bindings::KVM_DEV_ARM_VGIC_GRP_CTRL,
+                u64::from(kvm_bindings::KVM_DEV_ARM_VGIC_CTRL_INIT),
+                0,
+                0,
+            )?;
+
+            Ok(())
+        }
+    }
+
+    /// Create a GIC device.
+    ///
+    /// It will try to create by default a GICv3 device. If that fails it will try
+    /// to fall-back to a GICv2 device.
+    pub fn create_gic(vm: &Arc<dyn hypervisor::Vm>, vcpu_count: u64) -> Result<Box<dyn GICDevice>> {
+        KvmGICv3::new(vm, vcpu_count).or_else(|_| KvmGICv2::new(vm, vcpu_count))
+    }
 }
 
 #[cfg(test)]

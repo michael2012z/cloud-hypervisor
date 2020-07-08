@@ -146,7 +146,7 @@ pub fn configure_system<T: DeviceInfoForFDT + Clone + Debug>(
     device_info: &HashMap<(DeviceType, String), T>,
     initrd: &Option<super::InitramfsConfig>,
 ) -> super::Result<()> {
-    let gic_device = gic::create_gic(vm_fd, vcpu_count).map_err(Error::SetupGIC)?;
+    let gic_device = gic::kvm::create_gic(vm_fd, vcpu_count).map_err(Error::SetupGIC)?;
 
     let dtb = fdt::create_fdt(
         guest_mem,

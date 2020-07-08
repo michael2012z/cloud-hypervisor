@@ -5,14 +5,14 @@ use std::{boxed::Box, result};
 
 use kvm_ioctls::DeviceFd;
 
-use super::gic::{Error, GICDevice};
+use super::gic::{Error, GICDevice, GICDeviceOps};
 
 type Result<T> = result::Result<T, Error>;
 
 /// Represent a GIC v2 device
-pub struct GICv2 {
+pub struct GICv2<T> {
     /// The file descriptor for the KVM device
-    fd: DeviceFd,
+    fd: T,
 
     /// GIC device properties, to be used for setting up the fdt entry
     properties: [u64; 4],
@@ -21,7 +21,7 @@ pub struct GICv2 {
     vcpu_count: u64,
 }
 
-impl GICv2 {
+impl<T> GICv2 {
     // Unfortunately bindgen omits defines that are based on other defines.
     // See arch/arm64/include/uapi/asm/kvm.h file from the linux kernel.
     const KVM_VGIC_V2_DIST_SIZE: u64 = 0x1000;
@@ -51,12 +51,12 @@ impl GICv2 {
     }
 }
 
-impl GICDevice for GICv2 {
+impl<T> GICDevice for GICv2 {
     fn version() -> u32 {
         kvm_bindings::kvm_device_type_KVM_DEV_TYPE_ARM_VGIC_V2
     }
 
-    fn device_fd(&self) -> &DeviceFd {
+    fn device_fd(&self) -> &T {
         &self.fd
     }
 
@@ -76,7 +76,7 @@ impl GICDevice for GICv2 {
         GICv2::ARCH_GIC_V2_MAINT_IRQ
     }
 
-    fn create_device(fd: DeviceFd, vcpu_count: u64) -> Box<dyn GICDevice> {
+    fn create_device(fd: T, vcpu_count: u64) -> Box<dyn GICDevice> {
         Box::new(GICv2 {
             fd: fd,
             properties: [
@@ -88,27 +88,34 @@ impl GICDevice for GICv2 {
             vcpu_count: vcpu_count,
         })
     }
+}
 
-    fn init_device_attributes(gic_device: &Box<dyn GICDevice>) -> Result<()> {
-        /* Setting up the distributor attribute.
-        We are placing the GIC below 1GB so we need to substract the size of the distributor. */
-        Self::set_device_attribute(
-            &gic_device.device_fd(),
-            kvm_bindings::KVM_DEV_ARM_VGIC_GRP_ADDR,
-            u64::from(kvm_bindings::KVM_VGIC_V2_ADDR_TYPE_DIST),
-            &GICv2::get_dist_addr() as *const u64 as u64,
-            0,
-        )?;
+pub mod kvm {
+    use super::*;
+    pub type KvmGICv2 = GICv2<DeviceFd>;
 
-        /* Setting up the CPU attribute. */
-        Self::set_device_attribute(
-            &gic_device.device_fd(),
-            kvm_bindings::KVM_DEV_ARM_VGIC_GRP_ADDR,
-            u64::from(kvm_bindings::KVM_VGIC_V2_ADDR_TYPE_CPU),
-            &GICv2::get_cpu_addr() as *const u64 as u64,
-            0,
-        )?;
+    impl GICDeviceOps for KvmGICv2 {
+        fn init_device_attributes(gic_device: &Box<dyn GICDevice>) -> Result<()> {
+            /* Setting up the distributor attribute.
+            We are placing the GIC below 1GB so we need to substract the size of the distributor. */
+            Self::set_device_attribute(
+                &gic_device.device_fd(),
+                kvm_bindings::KVM_DEV_ARM_VGIC_GRP_ADDR,
+                u64::from(kvm_bindings::KVM_VGIC_V2_ADDR_TYPE_DIST),
+                &GICv2::get_dist_addr() as *const u64 as u64,
+                0,
+            )?;
 
-        Ok(())
+            /* Setting up the CPU attribute. */
+            Self::set_device_attribute(
+                &gic_device.device_fd(),
+                kvm_bindings::KVM_DEV_ARM_VGIC_GRP_ADDR,
+                u64::from(kvm_bindings::KVM_VGIC_V2_ADDR_TYPE_CPU),
+                &GICv2::get_cpu_addr() as *const u64 as u64,
+                0,
+            )?;
+
+            Ok(())
+        }
     }
 }
