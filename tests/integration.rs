@@ -1072,6 +1072,23 @@ mod tests {
                 .default_disks()
                 .args(&["--net", net_params.as_str()])
                 .args(&["--api-socket", &api_socket])
+                .args(&[
+                    "--serial",
+                    format!(
+                        "file=/root/workloads{}.serial.log",
+                        &guest.tmp_dir.path().to_str().unwrap()
+                    )
+                    .as_str(),
+                ])
+                .args(&[
+                    "--log-file",
+                    format!(
+                        "/root/workloads{}.log.log",
+                        &guest.tmp_dir.path().to_str().unwrap()
+                    )
+                    .as_str(),
+                ])
+                .args(&["-vvv"])
                 .spawn()
                 .unwrap();
 
@@ -1237,6 +1254,23 @@ mod tests {
                 ])
                 .default_net()
                 .args(&["--api-socket", &api_socket])
+                .args(&[
+                    "--serial",
+                    format!(
+                        "file=/root/workloads{}.serial.log",
+                        &guest.tmp_dir.path().to_str().unwrap()
+                    )
+                    .as_str(),
+                ])
+                .args(&[
+                    "--log-file",
+                    format!(
+                        "/root/workloads{}.log.log",
+                        &guest.tmp_dir.path().to_str().unwrap()
+                    )
+                    .as_str(),
+                ])
+                .args(&["-vvv"])
                 .spawn()
                 .unwrap();
 
@@ -2512,9 +2546,24 @@ mod tests {
         }
 
         #[test]
+        fn test_vhost_user_net_default_x() {
+            test_vhost_user_net(None, 2, Some(&prepare_vhost_user_net_daemon), false, false)
+        }
+
+        #[test]
+        fn test_vhost_user_net_default_y() {
+            test_vhost_user_net(None, 2, Some(&prepare_vhost_user_net_daemon), false, false)
+        }
+
+        #[test]
+        fn test_vhost_user_net_default_z() {
+            test_vhost_user_net(None, 2, Some(&prepare_vhost_user_net_daemon), false, false)
+        }
+
+        #[test]
         fn test_vhost_user_net_named_tap() {
             test_vhost_user_net(
-                Some("mytap0"),
+                Some("m-mytap0"),
                 2,
                 Some(&prepare_vhost_user_net_daemon),
                 false,
@@ -2525,7 +2574,7 @@ mod tests {
         #[test]
         fn test_vhost_user_net_existing_tap() {
             test_vhost_user_net(
-                Some("vunet-tap0"),
+                Some("m-vunet-tap0"),
                 2,
                 Some(&prepare_vhost_user_net_daemon),
                 false,
@@ -2541,7 +2590,7 @@ mod tests {
         #[test]
         fn test_vhost_user_net_tap_multiple_queues() {
             test_vhost_user_net(
-                Some("vunet-tap1"),
+                Some("m-vunet-tap1"),
                 4,
                 Some(&prepare_vhost_user_net_daemon),
                 false,
@@ -2569,6 +2618,19 @@ mod tests {
 
         #[test]
         fn test_vhost_user_blk_default() {
+            test_vhost_user_blk(2, false, false, Some(&prepare_vubd), false)
+        }
+
+        #[test]
+        fn test_vhost_user_blk_default_x() {
+            test_vhost_user_blk(2, false, false, Some(&prepare_vubd), false)
+        }
+        #[test]
+        fn test_vhost_user_blk_default_y() {
+            test_vhost_user_blk(2, false, false, Some(&prepare_vubd), false)
+        }
+        #[test]
+        fn test_vhost_user_blk_default_z() {
             test_vhost_user_blk(2, false, false, Some(&prepare_vubd), false)
         }
 
@@ -2805,7 +2867,7 @@ mod tests {
                         "--net",
                         guest.default_net_string().as_str(),
                         "tap=,mac=8a:6b:6f:5a:de:ac,ip=192.168.3.1,mask=255.255.255.0",
-                        "tap=mytap1,mac=fe:1f:9e:e1:60:f2,ip=192.168.4.1,mask=255.255.255.0",
+                        "tap=m-mytap1,mac=fe:1f:9e:e1:60:f2,ip=192.168.4.1,mask=255.255.255.0",
                     ])
                     .spawn()
                     .unwrap();
@@ -2814,7 +2876,7 @@ mod tests {
 
                 let tap_count = std::process::Command::new("bash")
                     .arg("-c")
-                    .arg("ip link | grep -c mytap1")
+                    .arg("ip link | grep -c m-mytap1")
                     .output()
                     .expect("Expected checking of tap count to succeed");
                 aver_eq!(tb, String::from_utf8_lossy(&tap_count.stdout).trim(), "1");
@@ -2846,17 +2908,20 @@ mod tests {
                 let host_ip = &guest.network.host_ip;
 
                 std::process::Command::new("bash")
-                    .args(&["-c", "sudo ip tuntap add name chtap0 mode tap"])
+                    .args(&["-c", "sudo ip tuntap add name m-chtap0 mode tap"])
                     .status()
                     .expect("Expected creating interface to work");
 
                 std::process::Command::new("bash")
-                    .args(&["-c", &format!("sudo ip addr add {}/24 dev chtap0", host_ip)])
+                    .args(&[
+                        "-c",
+                        &format!("sudo ip addr add {}/24 dev m-chtap0", host_ip),
+                    ])
                     .status()
                     .expect("Expected programming interface to work");
 
                 std::process::Command::new("bash")
-                    .args(&["-c", "sudo ip link set dev chtap0 up"])
+                    .args(&["-c", "sudo ip link set dev m-chtap0 up"])
                     .status()
                     .expect("Expected upping interface to work");
 
@@ -2868,7 +2933,7 @@ mod tests {
                         .default_disks()
                         .args(&[
                             "--net",
-                            format!("tap=chtap0,mac={}", guest.network.guest_mac).as_str(),
+                            format!("tap=m-chtap0,mac={}", guest.network.guest_mac).as_str(),
                         ])
                         .spawn()
                         .unwrap();

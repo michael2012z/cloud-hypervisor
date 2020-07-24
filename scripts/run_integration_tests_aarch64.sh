@@ -164,9 +164,9 @@ if [ ! -d "$SHARED_DIR" ]; then
 fi
 
 # Create tap interface without multipe queues support for vhost_user_net test.
-sudo ip tuntap add name vunet-tap0 mode tap
+sudo ip tuntap add name m-vunet-tap0 mode tap
 # Create tap interface with multipe queues support for vhost_user_net test.
-sudo ip tuntap add name vunet-tap1 mode tap multi_queue
+sudo ip tuntap add name m-vunet-tap1 mode tap multi_queue
 
 BUILD_TARGET="aarch64-unknown-linux-${CH_LIBC}"
 CFLAGS=""
@@ -206,7 +206,7 @@ RES=$?
 
 if [ $RES -eq 0 ]; then
     # virtio-mmio based testing
-    cargo build --release --target $BUILD_TARGET --no-default-features --features "mmio,kvm"
+    cargo build --all --release --target $BUILD_TARGET --no-default-features --features "mmio,kvm"
     strip target/$BUILD_TARGET/release/cloud-hypervisor
     strip target/$BUILD_TARGET/release/vhost_user_net
     strip target/$BUILD_TARGET/release/ch-remote
@@ -227,7 +227,7 @@ EOF
 fi
 
 # Tear vhost_user_net test network down
-sudo ip link del vunet-tap0
-sudo ip link del vunet-tap1
+sudo ip link del m-vunet-tap0
+sudo ip link del m-vunet-tap1
 
 exit $RES
