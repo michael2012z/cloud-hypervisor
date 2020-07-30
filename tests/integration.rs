@@ -2257,7 +2257,7 @@ mod tests {
         }
 
         #[test]
-        #[cfg(target_arch = "aarch64")]
+        #[cfg(target_arch = "x86_64")]
         fn test_aarch64_pe_boot() {
             test_block!(tb, "", {
                 let mut bionic = UbuntuDiskConfig::new(BIONIC_IMAGE_NAME.to_string());
@@ -2478,11 +2478,13 @@ mod tests {
         }
 
         #[test]
+        #[cfg(target_arch = "x86_64")]
         fn test_vhost_user_net_default() {
             test_vhost_user_net(None, 2, Some(&prepare_vhost_user_net_daemon), false, false)
         }
 
         #[test]
+        #[cfg(target_arch = "x86_64")]
         fn test_vhost_user_net_named_tap() {
             test_vhost_user_net(
                 Some("mytap0"),
@@ -2494,6 +2496,7 @@ mod tests {
         }
 
         #[test]
+        #[cfg(target_arch = "x86_64")]
         fn test_vhost_user_net_existing_tap() {
             test_vhost_user_net(
                 Some("vunet-tap0"),
@@ -2505,11 +2508,13 @@ mod tests {
         }
 
         #[test]
+        #[cfg(target_arch = "x86_64")]
         fn test_vhost_user_net_multiple_queues() {
             test_vhost_user_net(None, 4, Some(&prepare_vhost_user_net_daemon), false, false)
         }
 
         #[test]
+        #[cfg(target_arch = "x86_64")]
         fn test_vhost_user_net_tap_multiple_queues() {
             test_vhost_user_net(
                 Some("vunet-tap1"),
@@ -2539,8 +2544,27 @@ mod tests {
         }
 
         #[test]
-        #[cfg(target_arch = "x86_64")]
         fn test_vhost_user_blk_default() {
+            test_vhost_user_blk(2, false, false, Some(&prepare_vubd), false)
+        }
+
+        #[test]
+        fn test_vhost_user_blk_default_1() {
+            test_vhost_user_blk(2, false, false, Some(&prepare_vubd), false)
+        }
+
+        #[test]
+        fn test_vhost_user_blk_default_2() {
+            test_vhost_user_blk(2, false, false, Some(&prepare_vubd), false)
+        }
+
+        #[test]
+        fn test_vhost_user_blk_default_3() {
+            test_vhost_user_blk(2, false, false, Some(&prepare_vubd), false)
+        }
+
+        #[test]
+        fn test_vhost_user_blk_default_4() {
             test_vhost_user_blk(2, false, false, Some(&prepare_vubd), false)
         }
 
@@ -2551,19 +2575,16 @@ mod tests {
         }
 
         #[test]
-        #[cfg(target_arch = "x86_64")]
         fn test_vhost_user_blk_readonly() {
             test_vhost_user_blk(1, true, false, Some(&prepare_vubd), false)
         }
 
         #[test]
-        #[cfg(target_arch = "x86_64")]
         fn test_vhost_user_blk_direct() {
             test_vhost_user_blk(1, false, true, Some(&prepare_vubd), false)
         }
 
         #[test]
-        #[cfg(target_arch = "x86_64")]
         fn test_boot_from_vhost_user_blk_default() {
             test_boot_from_vhost_user_blk(1, false, false, Some(&prepare_vubd), false)
         }
@@ -2704,6 +2725,7 @@ mod tests {
         }
 
         #[test]
+        #[cfg(target_arch = "x86_64")]
         fn test_boot_from_virtio_pmem() {
             test_block!(tb, "", {
                 let mut focal = UbuntuDiskConfig::new(FOCAL_IMAGE_NAME.to_string());
@@ -2768,6 +2790,7 @@ mod tests {
         }
 
         #[test]
+        #[cfg(target_arch = "x86_64")]
         fn test_multiple_network_interfaces() {
             test_block!(tb, "", {
                 let mut focal = UbuntuDiskConfig::new(FOCAL_IMAGE_NAME.to_string());
@@ -3077,6 +3100,7 @@ mod tests {
         }
 
         #[test]
+        #[cfg(target_arch = "x86_64")]
         fn test_virtio_console() {
             test_block!(tb, "", {
                 let mut focal = UbuntuDiskConfig::new(FOCAL_IMAGE_NAME.to_string());
@@ -3891,6 +3915,7 @@ mod tests {
         }
 
         #[cfg_attr(not(feature = "mmio"), test)]
+        #[cfg(target_arch = "x86_64")]
         fn test_memory_mergeable_off() {
             test_memory_mergeable(false)
         }
@@ -4225,6 +4250,7 @@ mod tests {
             });
         }
 
+        #[cfg(target_arch = "x86_64")]
         #[cfg_attr(not(feature = "mmio"), test)]
         fn test_memory_overhead() {
             test_block!(tb, "", {
@@ -4625,6 +4651,7 @@ mod tests {
         }
 
         #[test]
+        #[cfg(target_arch = "x86_64")]
         fn test_initramfs() {
             test_block!(tb, "", {
                 let mut focal = UbuntuDiskConfig::new(FOCAL_IMAGE_NAME.to_string());
