@@ -403,7 +403,7 @@ impl Vm {
         #[cfg(target_arch = "x86_64")]
         vm.enable_split_irq().unwrap();
         let vm_snapshot = get_vm_snapshot(snapshot).map_err(Error::Restore)?;
-        let config = vm_snapshot.config.clone();
+        let config = vm_snapshot.config;
 
         let memory_manager = if let Some(memory_manager_snapshot) =
             snapshot.snapshots.get(MEMORY_MANAGER_SNAPSHOT_ID)
