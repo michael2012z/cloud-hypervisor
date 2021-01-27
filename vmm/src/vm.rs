@@ -1084,15 +1084,18 @@ impl Vm {
 
         let pci_space = (pci_space_start.0, pci_space_size);
 
+        #[allow(unused_mut, unused_assignments)]
+        let mut rsdp_addr: Option<GuestAddress> = None;
+
         #[cfg(feature = "acpi")]
         {
-            let _ = crate::acpi::create_acpi_tables(
+            rsdp_addr = Some(crate::acpi::create_acpi_tables(
                 &mem,
                 &self.device_manager,
                 &self.cpu_manager,
                 &self.memory_manager,
                 &self.numa_nodes,
-            );
+            ));
         }
 
         // Call `configure_system` and pass the GIC devices out, so that
@@ -1100,12 +1103,13 @@ impl Vm {
         let gic_device = arch::configure_system(
             &self.memory_manager.lock().as_ref().unwrap().vm,
             &mem,
-            &cmdline_cstring,
+            cmdline_cstring,
             self.cpu_manager.lock().unwrap().boot_vcpus() as u64,
             vcpu_mpidrs,
             device_info,
             &initramfs_config,
             &pci_space,
+            rsdp_addr,
         )
         .map_err(Error::ConfigureSystem)?;
 

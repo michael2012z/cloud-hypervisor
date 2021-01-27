@@ -16,7 +16,7 @@ use crate::DeviceType;
 use crate::RegionType;
 use aarch64::gic::GicDevice;
 use std::collections::HashMap;
-use std::ffi::CStr;
+use std::ffi::CString;
 use std::fmt::Debug;
 use std::sync::Arc;
 use vm_memory::{
@@ -116,18 +116,34 @@ pub fn arch_memory_regions(size: GuestUsize) -> Vec<(GuestAddress, usize, Region
 pub fn configure_system<T: DeviceInfoForFdt + Clone + Debug, S: ::std::hash::BuildHasher>(
     vm: &Arc<dyn hypervisor::Vm>,
     guest_mem: &GuestMemoryMmap,
-    cmdline_cstring: &CStr,
+    cmdline_cstring: CString,
     vcpu_count: u64,
     vcpu_mpidr: Vec<u64>,
     device_info: &HashMap<(DeviceType, String), T, S>,
     initrd: &Option<super::InitramfsConfig>,
     pci_space_address: &(u64, u64),
+    rsdp_addr: Option<GuestAddress>,
 ) -> super::Result<Box<dyn GicDevice>> {
     let gic_device = gic::kvm::create_gic(vm, vcpu_count).map_err(Error::SetupGic)?;
 
+    /* This is a walkaround before EFI ready.
+     * Append RSDP address to guest kernel command line with `acpi_rsdp=` parameter,
+     * if `acpi` feature is enabled.
+     * To work with this parameter, a user need to set `acpi` to `off`, `on` or `force`
+     * in `--cmdline` parameter of cloud-hypervisor. */
+    let cmdline = if let Some(rsdp_addr) = rsdp_addr {
+        let cmdline_bytes = cmdline_cstring.to_bytes();
+        let mut cmdline_string: String = String::from_utf8(cmdline_bytes.to_vec()).unwrap();
+        cmdline_string.push_str(&format!(" acpi_rsdp=0x{:08x}", rsdp_addr.0));
+        CString::new(cmdline_string).unwrap()
+    } else {
+        cmdline_cstring
+    };
+    debug!("cmdline: {:?}", cmdline);
+
     fdt::create_fdt(
         guest_mem,
-        cmdline_cstring,
+        &cmdline,
         vcpu_mpidr,
         device_info,
         &*gic_device,
