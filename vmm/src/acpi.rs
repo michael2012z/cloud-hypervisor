@@ -9,6 +9,10 @@ use crate::vm::NumaNodes;
 #[cfg(target_arch = "x86_64")]
 use acpi_tables::sdt::GenericAddress;
 use acpi_tables::{aml::Aml, rsdp::Rsdp, sdt::Sdt};
+#[cfg(target_arch = "aarch64")]
+use arch::aarch64::DeviceInfoForFdt;
+#[cfg(target_arch = "aarch64")]
+use arch::DeviceType;
 
 use bitflags::bitflags;
 use std::sync::{Arc, Mutex};
@@ -155,6 +159,34 @@ fn create_gtdt_table() -> SDT {
     gtdt
 }
 
+#[cfg(target_arch = "aarch64")]
+fn create_spcr_table(base_address: u64, gsi: u32) -> SDT {
+    // SPCR
+    let mut spcr = SDT::new(*b"SPCR", 80, 2, *b"CLOUDH", *b"CHSPCR  ", 1);
+    // Interface Type
+    spcr.write(36, 3u8);
+    // Base Address in format ACPI Generic Address Structure
+    spcr.write(40, GenericAddress::mmio_address::<u8>(base_address));
+    // Interrupt Type: Bit[3] ARMH GIC interrupt
+    spcr.write(52, (1 << 3) as u8);
+    // Global System Interrupt used by the UART
+    spcr.write(54, (gsi as u32).to_le());
+    // Baud Rate: 3 = 9600
+    spcr.write(58, 3u8);
+    // Stop Bits: 1 Stop bit
+    spcr.write(60, 1u8);
+    // Flow Control: Bit[1] = RTS/CTS hardware flow control
+    spcr.write(61, (1 << 1) as u8);
+    // PCI Device ID: Not a PCI device
+    spcr.write(64, 0xffff_u16);
+    // PCI Vendor ID: Not a PCI device
+    spcr.write(66, 0xffff_u16);
+
+    spcr.update_checksum();
+
+    spcr
+}
+
 pub fn create_acpi_tables(
     guest_mem: &GuestMemoryMmap,
     device_manager: &Arc<Mutex<DeviceManager>>,
@@ -258,10 +290,55 @@ pub fn create_acpi_tables(
         .expect("Error writing MCFG table");
     tables.push(mcfg_offset.0);
 
+    // SPCR
+    #[cfg(target_arch = "aarch64")]
+    let is_serial_on = device_manager
+        .lock()
+        .unwrap()
+        .get_device_info()
+        .clone()
+        .get(&(DeviceType::Serial, DeviceType::Serial.to_string()))
+        .is_some();
+    #[cfg(target_arch = "aarch64")]
+    let serial_device_addr = arch::layout::LEGACY_SERIAL_MAPPED_IO_START;
+    #[cfg(target_arch = "aarch64")]
+    let serial_device_irq = if is_serial_on {
+        device_manager
+            .lock()
+            .unwrap()
+            .get_device_info()
+            .clone()
+            .get(&(DeviceType::Serial, DeviceType::Serial.to_string()))
+            .unwrap()
+            .irq()
+    } else {
+        // If serial is turned off, add a fake device with invalid irq.
+        31
+    };
+    #[cfg(target_arch = "aarch64")]
+    let spcr = create_spcr_table(serial_device_addr, serial_device_irq);
+    #[cfg(target_arch = "aarch64")]
+    let spcr_offset = mcfg_offset.checked_add(mcfg.len() as u64).unwrap();
+    #[cfg(target_arch = "aarch64")]
+    guest_mem
+        .write_slice(spcr.as_slice(), spcr_offset)
+        .expect("Error writing SPCR table");
+    #[cfg(target_arch = "aarch64")]
+    tables.push(spcr_offset.0);
+
     // SRAT and SLIT
     // Only created if the NUMA nodes list is not empty.
     let (prev_tbl_len, prev_tbl_off) = if numa_nodes.is_empty() {
-        (mcfg.len(), mcfg_offset)
+        (
+            #[cfg(target_arch = "x86_64")]
+            mcfg.len(),
+            #[cfg(target_arch = "aarch64")]
+            spcr.len(),
+            #[cfg(target_arch = "x86_64")]
+            mcfg_offset,
+            #[cfg(target_arch = "aarch64")]
+            spcr_offset,
+        )
     } else {
         // SRAT
         let mut srat = Sdt::new(*b"SRAT", 36, 3, *b"CLOUDH", *b"CHSRAT  ", 1);
@@ -311,7 +388,10 @@ pub fn create_acpi_tables(
             }
         }
 
+        #[cfg(target_arch = "x86_64")]
         let srat_offset = mcfg_offset.checked_add(mcfg.len() as u64).unwrap();
+        #[cfg(target_arch = "aarch64")]
+        let srat_offset = spcr_offset.checked_add(spcr.len() as u64).unwrap();
         guest_mem
             .write_slice(srat.as_slice(), srat_offset)
             .expect("Error writing SRAT table");
