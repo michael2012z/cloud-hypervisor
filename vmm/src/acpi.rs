@@ -121,6 +121,40 @@ pub fn create_dsdt_table(
     dsdt
 }
 
+#[cfg(target_arch = "aarch64")]
+fn create_gtdt_table() -> SDT {
+    const ARCH_TIMER_NS_EL2_IRQ: u32 = 10;
+    const ARCH_TIMER_VIRT_IRQ: u32 = 11;
+    const ARCH_TIMER_S_EL1_IRQ: u32 = 13;
+    const ARCH_TIMER_NS_EL1_IRQ: u32 = 14;
+    const ACPI_GTDT_INTERRUPT_MODE_LEVEL: u32 = 0;
+    const ACPI_GTDT_CAP_ALWAYS_ON: u32 = 1 << 2;
+
+    let irqflags: u32 = ACPI_GTDT_INTERRUPT_MODE_LEVEL;
+    // GTDT
+    let mut gtdt = SDT::new(*b"GTDT", 104, 2, *b"CLOUDH", *b"CHGTDT  ", 1);
+    // Secure EL1 Timer GSIV
+    gtdt.write(48, (ARCH_TIMER_S_EL1_IRQ + 16) as u32);
+    // Secure EL1 Timer Flags
+    gtdt.write(52, irqflags);
+    // Non-Secure EL1 Timer GSIV
+    gtdt.write(56, (ARCH_TIMER_NS_EL1_IRQ + 16) as u32);
+    // Non-Secure EL1 Timer Flags
+    gtdt.write(60, (irqflags | ACPI_GTDT_CAP_ALWAYS_ON) as u32);
+    // Virtual EL1 Timer GSIV
+    gtdt.write(64, (ARCH_TIMER_VIRT_IRQ + 16) as u32);
+    // Virtual EL1 Timer Flags
+    gtdt.write(68, irqflags);
+    // EL2 Timer GSIV
+    gtdt.write(72, (ARCH_TIMER_NS_EL2_IRQ + 16) as u32);
+    // EL2 Timer Flags
+    gtdt.write(76, irqflags);
+
+    gtdt.update_checksum();
+
+    gtdt
+}
+
 pub fn create_acpi_tables(
     guest_mem: &GuestMemoryMmap,
     device_manager: &Arc<Mutex<DeviceManager>>,
@@ -188,6 +222,18 @@ pub fn create_acpi_tables(
         .expect("Error writing MADT table");
     tables.push(madt_offset.0);
 
+    // GTDT
+    #[cfg(target_arch = "aarch64")]
+    let gtdt = create_gtdt_table();
+    #[cfg(target_arch = "aarch64")]
+    let gtdt_offset = madt_offset.checked_add(madt.len() as u64).unwrap();
+    #[cfg(target_arch = "aarch64")]
+    guest_mem
+        .write_slice(gtdt.as_slice(), gtdt_offset)
+        .expect("Error writing GTDT table");
+    #[cfg(target_arch = "aarch64")]
+    tables.push(gtdt_offset.0);
+
     // MCFG
     let mut mcfg = Sdt::new(*b"MCFG", 36, 1, *b"CLOUDH", *b"CHMCFG  ", 1);
 
@@ -203,7 +249,10 @@ pub fn create_acpi_tables(
         ..Default::default()
     });
 
+    #[cfg(target_arch = "x86_64")]
     let mcfg_offset = madt_offset.checked_add(madt.len() as u64).unwrap();
+    #[cfg(target_arch = "aarch64")]
+    let mcfg_offset = gtdt_offset.checked_add(gtdt.len() as u64).unwrap();
     guest_mem
         .write_slice(mcfg.as_slice(), mcfg_offset)
         .expect("Error writing MCFG table");
