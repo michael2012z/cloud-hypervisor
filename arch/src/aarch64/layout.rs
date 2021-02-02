@@ -81,12 +81,18 @@ pub const RAM_64BIT_START: u64 = 0x4000_0000;
 /// As per `arch/arm64/include/uapi/asm/setup.h`.
 pub const CMDLINE_MAX_SIZE: usize = 2048;
 
+/// FDT is at the beginning of RAM.
 /// Maximum size of the device tree blob as specified in https://www.kernel.org/doc/Documentation/arm64/booting.txt.
+pub const FDT_START: u64 = RAM_64BIT_START;
 pub const FDT_MAX_SIZE: usize = 0x20_0000;
 
 /// Put ACPI table above dtb
 pub const ACPI_START: u64 = RAM_64BIT_START + FDT_MAX_SIZE as u64;
+pub const ACPI_MAX_SIZE: usize = 0x20_0000;
 pub const RSDP_POINTER: GuestAddress = GuestAddress(ACPI_START);
+
+/// Kernel start after FDT and ACPI
+pub const KERNEL_START: u64 = ACPI_START + ACPI_MAX_SIZE as u64;
 
 // As per virt/kvm/arm/vgic/vgic-kvm-device.c we need
 // the number of interrupts our GIC will support to be:

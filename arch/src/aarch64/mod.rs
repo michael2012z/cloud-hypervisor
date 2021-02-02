@@ -161,8 +161,9 @@ pub fn initramfs_load_addr(
     initramfs_size: usize,
 ) -> super::Result<u64> {
     let round_to_pagesize = |size| (size + (super::PAGE_SIZE - 1)) & !(super::PAGE_SIZE - 1);
-    match GuestAddress(get_fdt_addr(&guest_mem))
-        .checked_sub(round_to_pagesize(initramfs_size) as u64)
+    match guest_mem
+        .last_addr()
+        .checked_sub(round_to_pagesize(initramfs_size) as u64 - 1)
     {
         Some(offset) => {
             if guest_mem.address_in_range(offset) {
@@ -177,22 +178,12 @@ pub fn initramfs_load_addr(
 
 /// Returns the memory address where the kernel could be loaded.
 pub fn get_kernel_start() -> u64 {
-    layout::RAM_64BIT_START
+    layout::KERNEL_START
 }
 
 // Auxiliary function to get the address where the device tree blob is loaded.
-fn get_fdt_addr(mem: &GuestMemoryMmap) -> u64 {
-    // If the memory allocated is smaller than the size allocated for the FDT,
-    // we return the start of the DRAM so that
-    // we allow the code to try and load the FDT.
-
-    if let Some(addr) = mem.last_addr().checked_sub(layout::FDT_MAX_SIZE as u64 - 1) {
-        if mem.address_in_range(addr) {
-            return addr.raw_value();
-        }
-    }
-
-    layout::RAM_64BIT_START
+fn get_fdt_addr() -> u64 {
+    layout::FDT_START
 }
 
 pub fn get_host_cpu_phys_bits() -> u8 {
@@ -225,34 +216,5 @@ mod tests {
         assert_eq!(GuestAddress(layout::RAM_64BIT_START), regions[3].0);
         assert_eq!(1usize << 32, regions[3].1);
         assert_eq!(RegionType::Ram, regions[3].2);
-    }
-
-    #[test]
-    fn test_get_fdt_addr() {
-        let mut regions = Vec::new();
-
-        regions.push((
-            GuestAddress(layout::RAM_64BIT_START),
-            (layout::FDT_MAX_SIZE - 0x1000) as usize,
-        ));
-        let mem = GuestMemoryMmap::from_ranges(&regions).expect("Cannot initialize memory");
-        assert_eq!(get_fdt_addr(&mem), layout::RAM_64BIT_START);
-        regions.clear();
-
-        regions.push((
-            GuestAddress(layout::RAM_64BIT_START),
-            (layout::FDT_MAX_SIZE) as usize,
-        ));
-        let mem = GuestMemoryMmap::from_ranges(&regions).expect("Cannot initialize memory");
-        assert_eq!(get_fdt_addr(&mem), layout::RAM_64BIT_START);
-        regions.clear();
-
-        regions.push((
-            GuestAddress(layout::RAM_64BIT_START),
-            (layout::FDT_MAX_SIZE + 0x1000) as usize,
-        ));
-        let mem = GuestMemoryMmap::from_ranges(&regions).expect("Cannot initialize memory");
-        assert_eq!(get_fdt_addr(&mem), 0x1000 + layout::RAM_64BIT_START);
-        regions.clear();
     }
 }
