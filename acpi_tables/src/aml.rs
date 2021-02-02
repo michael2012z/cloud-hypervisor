@@ -543,6 +543,37 @@ impl Aml for IO {
     }
 }
 
+pub struct MMIO {
+    base: u32,
+    size: u32,
+    writable: u8,
+}
+
+impl MMIO {
+    pub fn new(base: u32, size: u32, writable: u8) -> Self {
+        MMIO {
+            base,
+            size,
+            writable,
+        }
+    }
+}
+
+impl Aml for MMIO {
+    fn to_aml_bytes(&self) -> Vec<u8> {
+        let mut bytes = Vec::new();
+
+        bytes.push(0x86); /* 32-Bit Fixed Location Memory Range Descriptor */
+        bytes.push(9);
+        bytes.push(0);
+        bytes.push(self.writable); /* Write status. 1: writable, 0: read-only */
+        bytes.append(&mut self.base.to_le_bytes().to_vec());
+        bytes.append(&mut self.size.to_le_bytes().to_vec());
+
+        bytes
+    }
+}
+
 pub struct Interrupt {
     consumer: bool,
     edge_triggered: bool,
