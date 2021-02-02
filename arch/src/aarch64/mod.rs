@@ -181,7 +181,7 @@ pub fn initramfs_load_addr(
 
 /// Returns the memory address where the kernel could be loaded.
 pub fn get_kernel_start() -> u64 {
-    layout::RAM_64BIT_START
+    layout::KERNEL_START
 }
 
 // Auxiliary function to get the address where the device tree blob is loaded.
