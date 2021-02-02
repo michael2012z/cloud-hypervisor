@@ -65,6 +65,12 @@ pub const PCI_MMCONFIG_SIZE: u64 = 256 << 20;
 
 /// Start of RAM on 64 bit ARM.
 pub const RAM_64BIT_START: u64 = 0x8000_0000;
+/// Location to store ACPI tables. 2 MiB memory is reserved for ACPI.
+/// This is only for test purpose.
+pub const RSDP_POINTER: GuestAddress = GuestAddress(RAM_64BIT_START);
+
+/// Location to load guest kernel
+pub const KERNEL_START: u64 = RAM_64BIT_START + 0x0020_0000;
 
 /// Kernel command line maximum size.
 /// As per `arch/arm64/include/uapi/asm/setup.h`.
