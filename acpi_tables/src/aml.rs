@@ -533,6 +533,36 @@ impl Aml for Io {
     }
 }
 
+pub struct Mmio {
+    base: u32,
+    size: u32,
+    writable: u8,
+}
+
+impl Mmio {
+    pub fn new(base: u32, size: u32, writable: u8) -> Self {
+        Mmio {
+            base,
+            size,
+            writable,
+        }
+    }
+}
+
+impl Aml for Mmio {
+    fn to_aml_bytes(&self) -> Vec<u8> {
+        let mut bytes = vec![0x86]; /* 32-Bit Fixed Location Memory Range Descriptor */
+
+        bytes.push(9);
+        bytes.push(0);
+        bytes.push(self.writable); /* Write status. 1: writable, 0: read-only */
+        bytes.append(&mut self.base.to_le_bytes().to_vec());
+        bytes.append(&mut self.size.to_le_bytes().to_vec());
+
+        bytes
+    }
+}
+
 pub struct Interrupt {
     consumer: bool,
     edge_triggered: bool,
@@ -1528,6 +1558,26 @@ mod tests {
         assert_eq!(
             0xdeca_fbad_deca_fbadu64.to_aml_bytes(),
             [0x0e, 0xad, 0xfb, 0xca, 0xde, 0xad, 0xfb, 0xca, 0xde]
+        );
+    }
+
+    #[test]
+    fn test_io() {
+        assert_eq!(
+            Io::new(0x3f8, 0x3f8, 0, 0x8).to_aml_bytes(),
+            [0x47, 0x01, 0xf8, 0x03, 0xf8, 0x03, 0x00, 0x08]
+        );
+        assert_eq!(
+            Io::new(0xcf8, 0xcf8, 1, 0x8).to_aml_bytes(),
+            [0x47, 0x01, 0xf8, 0x0c, 0xf8, 0x0c, 0x01, 0x08]
+        );
+        assert_eq!(
+            Mmio::new(0x0900_0000, 0x0000_1000, 0x01).to_aml_bytes(),
+            [0x86, 0x09, 0x00, 0x01, 0x00, 0x00, 0x00, 0x09, 0x00, 0x10, 0x00, 0x00]
+        );
+        assert_eq!(
+            Mmio::new(0x1234_5678, 0x1122_3344, 0x00).to_aml_bytes(),
+            [0x86, 0x09, 0x00, 0x00, 0x78, 0x56, 0x34, 0x12, 0x44, 0x33, 0x22, 0x11]
         );
     }
 
