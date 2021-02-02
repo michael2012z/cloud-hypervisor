@@ -3551,7 +3551,14 @@ impl Aml for DeviceManager {
             "_CRS".into(),
             &aml::ResourceTemplate::new(vec![
                 &aml::AddressSpace::new_bus_number(0x0u16, 0xffu16),
+                #[cfg(target_arch = "x86_64")]
                 &aml::IO::new(0xcf8, 0xcf8, 1, 0x8),
+                #[cfg(target_arch = "aarch64")]
+                &aml::MMIO::new(
+                    layout::PCI_MMCONFIG_START.0 as u32,
+                    layout::PCI_MMCONFIG_SIZE as u32,
+                    1,
+                ),
                 &aml::AddressSpace::new_memory(
                     aml::AddressSpaceCachable::NotCacheable,
                     true,
@@ -3617,6 +3624,16 @@ impl Aml for DeviceManager {
         )
         .to_aml_bytes();
 
+        // Serial device
+        #[cfg(target_arch = "x86_64")]
+        let serial_irq = 4;
+        #[cfg(target_arch = "aarch64")]
+        let serial_irq = self
+            .get_device_info()
+            .clone()
+            .get(&(DeviceType::Serial, DeviceType::Serial.to_string()))
+            .unwrap()
+            .irq();
         let com1_dsdt_data = aml::Device::new(
             "_SB_.COM1".into(),
             vec![
@@ -3625,8 +3642,15 @@ impl Aml for DeviceManager {
                 &aml::Name::new(
                     "_CRS".into(),
                     &aml::ResourceTemplate::new(vec![
-                        &aml::Interrupt::new(true, true, false, false, 4),
+                        &aml::Interrupt::new(true, true, false, false, serial_irq),
+                        #[cfg(target_arch = "x86_64")]
                         &aml::IO::new(0x3f8, 0x3f8, 0, 0x8),
+                        #[cfg(target_arch = "aarch64")]
+                        &aml::MMIO::new(
+                            arch::layout::LEGACY_SERIAL_MAPPED_IO_START as u32,
+                            MMIO_LEN as u32,
+                            1,
+                        ),
                     ]),
                 ),
             ],
