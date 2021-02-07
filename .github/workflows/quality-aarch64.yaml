@@ -38,4 +38,4 @@ jobs:
         with:
           use-cross: true
           command: clippy
-          args: --target=${{ matrix.target }} --no-default-features --features "kvm" -- -D warnings
+          args: --target=${{ matrix.target }} --no-default-features --features "kvm,acpi" -- -D warnings

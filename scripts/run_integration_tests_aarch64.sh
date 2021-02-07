@@ -186,8 +186,10 @@ if [[ "$hypervisor" = "mshv" ]]; then
     exit 1
 fi
 
-features_build="--no-default-features --features $hypervisor "
-features_test="--no-default-features --features integration_tests,$hypervisor"
+features_build_fdt="--no-default-features --features $hypervisor"
+features_build_acpi="--no-default-features --features $hypervisor,acpi"
+features_test_fdt="--no-default-features --features integration_tests,$hypervisor"
+features_test_acpi="--no-default-features --features integration_tests,$hypervisor,acpi"
 
 # lock the workloads folder to avoid parallel updating by different containers
 (
@@ -211,7 +213,7 @@ TARGET_CC="musl-gcc"
 CFLAGS="-I /usr/include/aarch64-linux-musl/ -idirafter /usr/include/"
 fi
 
-cargo build --all --release  $features_build --target $BUILD_TARGET
+cargo build --all --release  $features_build_fdt --target $BUILD_TARGET
 strip target/$BUILD_TARGET/release/cloud-hypervisor
 strip target/$BUILD_TARGET/release/vhost_user_net
 strip target/$BUILD_TARGET/release/ch-remote
@@ -223,7 +225,25 @@ sudo bash -c "echo 10 > /sys/kernel/mm/ksm/sleep_millisecs"
 sudo bash -c "echo 1 > /sys/kernel/mm/ksm/run"
 
 export RUST_BACKTRACE=1
-time cargo test $features_test "tests::parallel::$test_filter"
+time cargo test $features_test_fdt "tests::parallel::$test_filter"
 RES=$?
+echo "Finished integration test with FDT."
+
+if [ $RES -eq 0 ]; then
+    cargo build --all --release  $features_build_acpi --target $BUILD_TARGET
+    strip target/$BUILD_TARGET/release/cloud-hypervisor
+    strip target/$BUILD_TARGET/release/vhost_user_net
+    strip target/$BUILD_TARGET/release/ch-remote
+
+    # Enable KSM with some reasonable parameters so that it won't take too long
+    # for the memory to be merged between two processes.
+    sudo bash -c "echo 1000000 > /sys/kernel/mm/ksm/pages_to_scan"
+    sudo bash -c "echo 10 > /sys/kernel/mm/ksm/sleep_millisecs"
+    sudo bash -c "echo 1 > /sys/kernel/mm/ksm/run"
+
+    time cargo test $features_test_acpi "tests::parallel::$test_filter"
+    RES=$?
+    echo "Finished integration test with ACPI."
+fi
 
 exit $RES
