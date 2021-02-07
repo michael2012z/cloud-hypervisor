@@ -105,8 +105,12 @@ mod tests {
     #[cfg(target_arch = "x86_64")]
     const OVMF_NAME: &str = "OVMF-4b47d0c6c8.fd";
 
+    #[cfg(target_arch = "x86_64")]
     const DIRECT_KERNEL_BOOT_CMDLINE: &str =
         "root=/dev/vda1 console=hvc0 rw systemd.journald.forward_to_console=1";
+    #[cfg(target_arch = "aarch64")]
+    const DIRECT_KERNEL_BOOT_CMDLINE: &str =
+        "root=/dev/vda1 console=hvc0 rw systemd.journald.forward_to_console=1 acpi=on";
 
     const PIPE_SIZE: i32 = 32 << 20;
 
@@ -1545,8 +1549,8 @@ mod tests {
                 10 + (num_queues as u32)
             );
 
-            // ACPI feature is needed.
-            #[cfg(feature = "acpi")]
+            // ACPI feature is needed. But AArch64 has not been ready for resizing RAM.
+            #[cfg(all(target_arch = "x86_64", feature = "acpi"))]
             {
                 guest
                     .ssh_command(
@@ -1908,8 +1912,8 @@ mod tests {
                 "bar"
             );
 
-            // ACPI feature is needed.
-            #[cfg(feature = "acpi")]
+            // ACPI feature is needed. But AArch64 has not been ready for resizing RAM.
+            #[cfg(all(target_arch = "x86_64", feature = "acpi"))]
             {
                 guest
                     .ssh_command(
@@ -2664,8 +2668,6 @@ mod tests {
                 .args(&["--memory", "size=5120M"])
                 .args(&["--kernel", direct_kernel_boot_path().to_str().unwrap()])
                 .args(&["--cmdline", DIRECT_KERNEL_BOOT_CMDLINE])
-                .args(&["--serial", "tty"])
-                .args(&["--console", "off"])
                 .capture_output()
                 .default_disks()
                 .default_net();
