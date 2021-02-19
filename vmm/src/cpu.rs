@@ -189,7 +189,7 @@ pub enum Error {
 }
 pub type Result<T> = result::Result<T, Error>;
 
-#[cfg(feature = "acpi")]
+#[cfg(all(target_arch = "x86_64", feature = "acpi"))]
 #[repr(packed)]
 struct LocalAPIC {
     pub r#type: u8,
@@ -474,6 +474,7 @@ pub struct CpuManager {
     seccomp_action: SeccompAction,
     vmmops: Arc<Box<dyn VmmOps>>,
     #[cfg(feature = "acpi")]
+    #[cfg_attr(target_arch = "aarch64", allow(dead_code))]
     acpi_address: GuestAddress,
 }
 
@@ -1306,11 +1307,24 @@ struct CPU {
     cpu_id: u8,
 }
 
-#[cfg(feature = "acpi")]
+#[cfg(all(target_arch = "x86_64", feature = "acpi"))]
 const MADT_CPU_ENABLE_FLAG: usize = 0;
 
 #[cfg(feature = "acpi")]
 impl Aml for CPU {
+    #[cfg(target_arch = "aarch64")]
+    fn to_aml_bytes(&self) -> Vec<u8> {
+        aml::Device::new(
+            format!("C{:03}", self.cpu_id).as_str().into(),
+            vec![
+                &aml::Name::new("_HID".into(), &"ACPI0007"),
+                &aml::Name::new("_UID".into(), &self.cpu_id),
+            ],
+        )
+        .to_aml_bytes()
+    }
+
+    #[cfg(target_arch = "x86_64")]
     fn to_aml_bytes(&self) -> Vec<u8> {
         let lapic = LocalAPIC {
             r#type: 0,
@@ -1513,6 +1527,7 @@ impl Aml for CpuManager {
     fn to_aml_bytes(&self) -> Vec<u8> {
         let mut bytes = Vec::new();
         // CPU hotplug controller
+        #[cfg(target_arch = "x86_64")]
         bytes.extend_from_slice(
             &aml::Device::new(
                 "_SB_.PRES".into(),
@@ -1570,10 +1585,14 @@ impl Aml for CpuManager {
         let hid = aml::Name::new("_HID".into(), &"ACPI0010");
         let uid = aml::Name::new("_CID".into(), &aml::EISAName::new("PNP0A05"));
         // Bundle methods together under a common object
+        #[cfg(target_arch = "x86_64")]
         let methods = CPUMethods {
             max_vcpus: self.config.max_vcpus,
         };
+        #[cfg(target_arch = "x86_64")]
         let mut cpu_data_inner: Vec<&dyn aml::Aml> = vec![&hid, &uid, &methods];
+        #[cfg(target_arch = "aarch64")]
+        let mut cpu_data_inner: Vec<&dyn aml::Aml> = vec![&hid, &uid];
 
         let mut cpu_devices = Vec::new();
         for cpu_id in 0..self.config.max_vcpus {
