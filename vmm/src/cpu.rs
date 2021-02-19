@@ -189,7 +189,7 @@ pub enum Error {
 }
 pub type Result<T> = result::Result<T, Error>;
 
-#[cfg(feature = "acpi")]
+#[cfg(all(target_arch = "x86_64", feature = "acpi"))]
 #[repr(packed)]
 struct LocalAPIC {
     pub r#type: u8,
@@ -474,6 +474,7 @@ pub struct CpuManager {
     seccomp_action: SeccompAction,
     vmmops: Arc<Box<dyn VmmOps>>,
     #[cfg(feature = "acpi")]
+    #[cfg_attr(target_arch = "aarch64", allow(dead_code))]
     acpi_address: GuestAddress,
 }
 
@@ -1306,12 +1307,13 @@ struct CPU {
     cpu_id: u8,
 }
 
-#[cfg(feature = "acpi")]
+#[cfg(all(target_arch = "x86_64", feature = "acpi"))]
 const MADT_CPU_ENABLE_FLAG: usize = 0;
 
 #[cfg(feature = "acpi")]
-impl Aml for CPU {
-    fn to_aml_bytes(&self) -> Vec<u8> {
+impl CPU {
+    #[cfg(target_arch = "x86_64")]
+    fn generate_mat(&self) -> Vec<u8> {
         let lapic = LocalAPIC {
             r#type: 0,
             length: 8,
@@ -1323,6 +1325,16 @@ impl Aml for CPU {
         let mut mat_data: Vec<u8> = Vec::new();
         mat_data.resize(std::mem::size_of_val(&lapic), 0);
         unsafe { *(mat_data.as_mut_ptr() as *mut LocalAPIC) = lapic };
+
+        mat_data
+    }
+}
+
+#[cfg(feature = "acpi")]
+impl Aml for CPU {
+    fn to_aml_bytes(&self) -> Vec<u8> {
+        #[cfg(target_arch = "x86_64")]
+        let mat_data: Vec<u8> = self.generate_mat();
 
         aml::Device::new(
             format!("C{:03}", self.cpu_id).as_str().into(),
@@ -1348,6 +1360,7 @@ impl Aml for CPU {
                         vec![&self.cpu_id],
                     ))],
                 ),
+                #[cfg(target_arch = "x86_64")]
                 // The Linux kernel expects every CPU device to have a _MAT entry
                 // containing the LAPIC for this processor with the enabled bit set
                 // even it if is disabled in the MADT (non-boot CPU)
@@ -1513,6 +1526,7 @@ impl Aml for CpuManager {
     fn to_aml_bytes(&self) -> Vec<u8> {
         let mut bytes = Vec::new();
         // CPU hotplug controller
+        #[cfg(target_arch = "x86_64")]
         bytes.extend_from_slice(
             &aml::Device::new(
                 "_SB_.PRES".into(),
