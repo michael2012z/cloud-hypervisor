@@ -125,6 +125,140 @@ pub fn create_dsdt_table(
     dsdt
 }
 
+fn create_facp_table(dsdt_offset: GuestAddress) -> SDT {
+    // Revision 6 of the ACPI FADT table is 276 bytes long
+    let mut facp = SDT::new(*b"FACP", 276, 6, *b"CLOUDH", *b"CHFACP  ", 1);
+
+    // PM_TMR_BLK I/O port
+    #[cfg(target_arch = "x86_64")]
+    facp.write(76, 0xb008u32);
+
+    // HW_REDUCED_ACPI, RESET_REG_SUP, TMR_VAL_EXT
+    let fadt_flags: u32 = 1 << 20 | 1 << 10 | 1 << 8;
+    facp.write(112, fadt_flags);
+
+    // RESET_REG
+    #[cfg(target_arch = "x86_64")]
+    facp.write(116, GenericAddress::io_port_address::<u8>(0x3c0));
+    // RESET_VALUE
+    #[cfg(target_arch = "x86_64")]
+    facp.write(128, 1u8);
+
+    // ARM_BOOT_ARCH: enable PSCI with HVC enable-method
+    #[cfg(target_arch = "aarch64")]
+    facp.write(129, 3u16);
+
+    facp.write(131, 3u8); // FADT minor version
+    facp.write(140, dsdt_offset.0); // X_DSDT
+
+    // X_PM_TMR_BLK
+    #[cfg(target_arch = "x86_64")]
+    facp.write(208, GenericAddress::io_port_address::<u32>(0xb008));
+
+    // SLEEP_CONTROL_REG
+    #[cfg(target_arch = "x86_64")]
+    facp.write(244, GenericAddress::io_port_address::<u8>(0x3c0));
+    // SLEEP_STATUS_REG
+    #[cfg(target_arch = "x86_64")]
+    facp.write(256, GenericAddress::io_port_address::<u8>(0x3c0));
+
+    facp.write(268, b"CLOUDHYP"); // Hypervisor Vendor Identity
+
+    facp.update_checksum();
+
+    facp
+}
+
+fn create_srat_table(numa_nodes: &NumaNodes) -> SDT {
+    let mut srat = SDT::new(*b"SRAT", 36, 3, *b"CLOUDH", *b"CHSRAT  ", 1);
+    // SRAT reserved 12 bytes
+    srat.append_slice(&[0u8; 12]);
+
+    // Check the MemoryAffinity structure is the right size as expected by
+    // the ACPI specification.
+    assert_eq!(std::mem::size_of::<MemoryAffinity>(), 40);
+
+    for (node_id, node) in numa_nodes.iter() {
+        let proximity_domain = *node_id as u32;
+
+        for region in node.memory_regions() {
+            srat.append(MemoryAffinity::from_region(
+                region,
+                proximity_domain,
+                MemAffinityFlags::ENABLE,
+            ))
+        }
+
+        for region in node.hotplug_regions() {
+            srat.append(MemoryAffinity::from_region(
+                region,
+                proximity_domain,
+                MemAffinityFlags::ENABLE | MemAffinityFlags::HOTPLUGGABLE,
+            ))
+        }
+
+        for cpu in node.cpus() {
+            let x2apic_id = *cpu as u32;
+
+            // Flags
+            // - Enabled = 1 (bit 0)
+            // - Reserved bits 1-31
+            let flags = 1;
+
+            srat.append(ProcessorLocalX2ApicAffinity {
+                type_: 2,
+                length: 24,
+                proximity_domain,
+                x2apic_id,
+                flags,
+                clock_domain: 0,
+                ..Default::default()
+            });
+        }
+    }
+    srat
+}
+
+fn create_slit_table(numa_nodes: &NumaNodes) -> SDT {
+    let mut slit = SDT::new(*b"SLIT", 36, 1, *b"CLOUDH", *b"CHSLIT  ", 1);
+    // Number of System Localities on 8 bytes.
+    slit.append(numa_nodes.len() as u64);
+
+    let existing_nodes: Vec<u32> = numa_nodes.keys().cloned().collect();
+    for (node_id, node) in numa_nodes.iter() {
+        let distances = node.distances();
+        for i in existing_nodes.iter() {
+            let dist: u8 = if *node_id == *i {
+                10
+            } else if let Some(distance) = distances.get(i) {
+                *distance as u8
+            } else {
+                20
+            };
+
+            slit.append(dist);
+        }
+    }
+    slit
+}
+
+fn create_mcfg_table() -> SDT {
+    let mut mcfg = SDT::new(*b"MCFG", 36, 1, *b"CLOUDH", *b"CHMCFG  ", 1);
+
+    // MCFG reserved 8 bytes
+    mcfg.append(0u64);
+
+    // 32-bit PCI enhanced configuration mechanism
+    mcfg.append(PCIRangeEntry {
+        base_address: arch::layout::PCI_MMCONFIG_START.0,
+        segment: 0,
+        start: 0,
+        end: ((arch::layout::PCI_MMCONFIG_SIZE - 1) >> 20) as u8,
+        ..Default::default()
+    });
+    mcfg
+}
+
 #[cfg(target_arch = "aarch64")]
 fn create_gtdt_table() -> SDT {
     const ARCH_TIMER_NS_EL2_IRQ: u32 = 10;
@@ -249,45 +383,7 @@ pub fn create_acpi_tables(
         .expect("Error writing DSDT table");
 
     // FACP aka FADT
-    // Revision 6 of the ACPI FADT table is 276 bytes long
-    let mut facp = SDT::new(*b"FACP", 276, 6, *b"CLOUDH", *b"CHFACP  ", 1);
-
-    // PM_TMR_BLK I/O port
-    #[cfg(target_arch = "x86_64")]
-    facp.write(76, 0xb008u32);
-
-    // HW_REDUCED_ACPI, RESET_REG_SUP, TMR_VAL_EXT
-    let fadt_flags: u32 = 1 << 20 | 1 << 10 | 1 << 8;
-    facp.write(112, fadt_flags);
-
-    // RESET_REG
-    #[cfg(target_arch = "x86_64")]
-    facp.write(116, GenericAddress::io_port_address::<u8>(0x3c0));
-    // RESET_VALUE
-    #[cfg(target_arch = "x86_64")]
-    facp.write(128, 1u8);
-
-    // ARM_BOOT_ARCH: enable PSCI with HVC enable-method
-    #[cfg(target_arch = "aarch64")]
-    facp.write(129, 3u16);
-
-    facp.write(131, 3u8); // FADT minor version
-    facp.write(140, dsdt_offset.0); // X_DSDT
-
-    // X_PM_TMR_BLK
-    #[cfg(target_arch = "x86_64")]
-    facp.write(208, GenericAddress::io_port_address::<u32>(0xb008));
-
-    // SLEEP_CONTROL_REG
-    #[cfg(target_arch = "x86_64")]
-    facp.write(244, GenericAddress::io_port_address::<u8>(0x3c0));
-    // SLEEP_STATUS_REG
-    #[cfg(target_arch = "x86_64")]
-    facp.write(256, GenericAddress::io_port_address::<u8>(0x3c0));
-
-    facp.write(268, b"CLOUDHYP"); // Hypervisor Vendor Identity
-
-    facp.update_checksum();
+    let facp = create_facp_table(dsdt_offset);
     let facp_offset = dsdt_offset.checked_add(dsdt.len() as u64).unwrap();
     guest_mem
         .write_slice(facp.as_slice(), facp_offset)
@@ -315,20 +411,7 @@ pub fn create_acpi_tables(
     tables.push(gtdt_offset.0);
 
     // MCFG
-    let mut mcfg = SDT::new(*b"MCFG", 36, 1, *b"CLOUDH", *b"CHMCFG  ", 1);
-
-    // MCFG reserved 8 bytes
-    mcfg.append(0u64);
-
-    // 32-bit PCI enhanced configuration mechanism
-    mcfg.append(PCIRangeEntry {
-        base_address: arch::layout::PCI_MMCONFIG_START.0,
-        segment: 0,
-        start: 0,
-        end: ((arch::layout::PCI_MMCONFIG_SIZE - 1) >> 20) as u8,
-        ..Default::default()
-    });
-
+    let mcfg = create_mcfg_table();
     #[cfg(target_arch = "x86_64")]
     let mcfg_offset = madt_offset.checked_add(madt.len() as u64).unwrap();
     #[cfg(target_arch = "aarch64")]
@@ -383,53 +466,7 @@ pub fn create_acpi_tables(
         )
     } else {
         // SRAT
-        let mut srat = SDT::new(*b"SRAT", 36, 3, *b"CLOUDH", *b"CHSRAT  ", 1);
-        // SRAT reserved 12 bytes
-        srat.append_slice(&[0u8; 12]);
-
-        // Check the MemoryAffinity structure is the right size as expected by
-        // the ACPI specification.
-        assert_eq!(std::mem::size_of::<MemoryAffinity>(), 40);
-
-        for (node_id, node) in numa_nodes.iter() {
-            let proximity_domain = *node_id as u32;
-
-            for region in node.memory_regions() {
-                srat.append(MemoryAffinity::from_region(
-                    region,
-                    proximity_domain,
-                    MemAffinityFlags::ENABLE,
-                ))
-            }
-
-            for region in node.hotplug_regions() {
-                srat.append(MemoryAffinity::from_region(
-                    region,
-                    proximity_domain,
-                    MemAffinityFlags::ENABLE | MemAffinityFlags::HOTPLUGGABLE,
-                ))
-            }
-
-            for cpu in node.cpus() {
-                let x2apic_id = *cpu as u32;
-
-                // Flags
-                // - Enabled = 1 (bit 0)
-                // - Reserved bits 1-31
-                let flags = 1;
-
-                srat.append(ProcessorLocalX2ApicAffinity {
-                    type_: 2,
-                    length: 24,
-                    proximity_domain,
-                    x2apic_id,
-                    flags,
-                    clock_domain: 0,
-                    ..Default::default()
-                });
-            }
-        }
-
+        let srat = create_srat_table(numa_nodes);
         #[cfg(target_arch = "x86_64")]
         let srat_offset = mcfg_offset.checked_add(mcfg.len() as u64).unwrap();
         #[cfg(target_arch = "aarch64")]
@@ -440,26 +477,7 @@ pub fn create_acpi_tables(
         tables.push(srat_offset.0);
 
         // SLIT
-        let mut slit = SDT::new(*b"SLIT", 36, 1, *b"CLOUDH", *b"CHSLIT  ", 1);
-        // Number of System Localities on 8 bytes.
-        slit.append(numa_nodes.len() as u64);
-
-        let existing_nodes: Vec<u32> = numa_nodes.keys().cloned().collect();
-        for (node_id, node) in numa_nodes.iter() {
-            let distances = node.distances();
-            for i in existing_nodes.iter() {
-                let dist: u8 = if *node_id == *i {
-                    10
-                } else if let Some(distance) = distances.get(i) {
-                    *distance as u8
-                } else {
-                    20
-                };
-
-                slit.append(dist);
-            }
-        }
-
+        let slit = create_slit_table(numa_nodes);
         let slit_offset = srat_offset.checked_add(srat.len() as u64).unwrap();
         guest_mem
             .write_slice(slit.as_slice(), slit_offset)
