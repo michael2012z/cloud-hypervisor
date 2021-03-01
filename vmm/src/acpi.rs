@@ -365,6 +365,28 @@ fn create_iort_table() -> SDT {
     iort
 }
 
+fn write_acpi_buffer(buffer: &mut Vec<u8>, rsdp_base: usize, table: &[u8], offset: usize) {
+    debug!(
+        "write_acpi_buffer: buffer.len() = 0x{:x}, offset = 0x{:x}, table.len() = 0x{:x}",
+        buffer.len(),
+        offset,
+        table.len()
+    );
+
+    let offset = offset - rsdp_base;
+
+    if offset + table.len() > buffer.capacity() {
+        panic!("overflow");
+    }
+
+    if offset + table.len() > buffer.len() {
+        buffer.resize(offset + table.len(), 0);
+    }
+    for i in 0..table.len() {
+        buffer[offset + i] = table[i]
+    }
+}
+
 pub fn create_acpi_tables(
     guest_mem: &GuestMemoryMmap,
     device_manager: &Arc<Mutex<DeviceManager>>,
@@ -372,6 +394,7 @@ pub fn create_acpi_tables(
     memory_manager: &Arc<Mutex<MemoryManager>>,
     numa_nodes: &NumaNodes,
 ) -> GuestAddress {
+    let mut buffer: Vec<u8> = Vec::with_capacity(0x0020_0000 as usize);
     let mut prev_tbl_len: u64;
     let mut prev_tbl_off: GuestAddress;
     let rsdp_offset = arch::layout::RSDP_POINTER;
@@ -380,24 +403,33 @@ pub fn create_acpi_tables(
     // DSDT
     let dsdt = create_dsdt_table(device_manager, cpu_manager, memory_manager);
     let dsdt_offset = rsdp_offset.checked_add(RSDP::len() as u64).unwrap();
-    guest_mem
-        .write_slice(dsdt.as_slice(), dsdt_offset)
-        .expect("Error writing DSDT table");
+    write_acpi_buffer(
+        &mut buffer,
+        rsdp_offset.0 as usize,
+        dsdt.as_slice(),
+        dsdt_offset.0 as usize,
+    );
 
     // FACP aka FADT
     let facp = create_facp_table(dsdt_offset);
     let facp_offset = dsdt_offset.checked_add(dsdt.len() as u64).unwrap();
-    guest_mem
-        .write_slice(facp.as_slice(), facp_offset)
-        .expect("Error writing FACP table");
+    write_acpi_buffer(
+        &mut buffer,
+        rsdp_offset.0 as usize,
+        facp.as_slice(),
+        facp_offset.0 as usize,
+    );
     tables.push(facp_offset.0);
 
     // MADT
     let madt = cpu_manager.lock().unwrap().create_madt();
     let madt_offset = facp_offset.checked_add(facp.len() as u64).unwrap();
-    guest_mem
-        .write_slice(madt.as_slice(), madt_offset)
-        .expect("Error writing MADT table");
+    write_acpi_buffer(
+        &mut buffer,
+        rsdp_offset.0 as usize,
+        madt.as_slice(),
+        madt_offset.0 as usize,
+    );
     tables.push(madt_offset.0);
 
     #[cfg(target_arch = "x86_64")]
@@ -411,9 +443,12 @@ pub fn create_acpi_tables(
     {
         let gtdt = create_gtdt_table();
         let gtdt_offset = madt_offset.checked_add(madt.len() as u64).unwrap();
-        guest_mem
-            .write_slice(gtdt.as_slice(), gtdt_offset)
-            .expect("Error writing GTDT table");
+        write_acpi_buffer(
+            &mut buffer,
+            rsdp_offset.0 as usize,
+            gtdt.as_slice(),
+            gtdt_offset.0 as usize,
+        );
         tables.push(gtdt_offset.0);
         prev_tbl_len = gtdt.len() as u64;
         prev_tbl_off = gtdt_offset;
@@ -422,9 +457,12 @@ pub fn create_acpi_tables(
     // MCFG
     let mcfg = create_mcfg_table();
     let mcfg_offset = prev_tbl_off.checked_add(prev_tbl_len).unwrap();
-    guest_mem
-        .write_slice(mcfg.as_slice(), mcfg_offset)
-        .expect("Error writing MCFG table");
+    write_acpi_buffer(
+        &mut buffer,
+        rsdp_offset.0 as usize,
+        mcfg.as_slice(),
+        mcfg_offset.0 as usize,
+    );
     tables.push(mcfg_offset.0);
 
     #[cfg(target_arch = "x86_64")]
@@ -454,9 +492,13 @@ pub fn create_acpi_tables(
             .irq();
         let spcr = create_spcr_table(serial_device_addr, serial_device_irq);
         let spcr_offset = mcfg_offset.checked_add(mcfg.len() as u64).unwrap();
-        guest_mem
-            .write_slice(spcr.as_slice(), spcr_offset)
-            .expect("Error writing SPCR table");
+        write_acpi_buffer(
+            &mut buffer,
+            rsdp_offset.0 as usize,
+            spcr.as_slice(),
+            spcr_offset.0 as usize,
+        );
+
         tables.push(spcr_offset.0);
         prev_tbl_len = spcr.len() as u64;
         prev_tbl_off = spcr_offset;
@@ -468,17 +510,25 @@ pub fn create_acpi_tables(
         // SRAT
         let srat = create_srat_table(numa_nodes);
         let srat_offset = prev_tbl_off.checked_add(prev_tbl_len).unwrap();
-        guest_mem
-            .write_slice(srat.as_slice(), srat_offset)
-            .expect("Error writing SRAT table");
+        write_acpi_buffer(
+            &mut buffer,
+            rsdp_offset.0 as usize,
+            srat.as_slice(),
+            srat_offset.0 as usize,
+        );
+
         tables.push(srat_offset.0);
 
         // SLIT
         let slit = create_slit_table(numa_nodes);
         let slit_offset = srat_offset.checked_add(srat.len() as u64).unwrap();
-        guest_mem
-            .write_slice(slit.as_slice(), slit_offset)
-            .expect("Error writing SRAT table");
+        write_acpi_buffer(
+            &mut buffer,
+            rsdp_offset.0 as usize,
+            slit.as_slice(),
+            slit_offset.0 as usize,
+        );
+
         tables.push(slit_offset.0);
 
         prev_tbl_len = slit.len() as u64;
@@ -489,9 +539,13 @@ pub fn create_acpi_tables(
     {
         let iort = create_iort_table();
         let iort_offset = prev_tbl_off.checked_add(prev_tbl_len).unwrap();
-        guest_mem
-            .write_slice(iort.as_slice(), iort_offset)
-            .expect("Error writing IORT table");
+        write_acpi_buffer(
+            &mut buffer,
+            rsdp_offset.0 as usize,
+            iort.as_slice(),
+            iort_offset.0 as usize,
+        );
+
         tables.push(iort_offset.0);
         prev_tbl_len = iort.len() as u64;
         prev_tbl_off = iort_offset;
@@ -504,15 +558,31 @@ pub fn create_acpi_tables(
     }
     xsdt.update_checksum();
     let xsdt_offset = prev_tbl_off.checked_add(prev_tbl_len).unwrap();
-    guest_mem
-        .write_slice(xsdt.as_slice(), xsdt_offset)
-        .expect("Error writing XSDT table");
+    write_acpi_buffer(
+        &mut buffer,
+        rsdp_offset.0 as usize,
+        xsdt.as_slice(),
+        xsdt_offset.0 as usize,
+    );
 
     // RSDP
     let rsdp = RSDP::new(*b"CLOUDH", xsdt_offset.0);
-    guest_mem
-        .write_slice(rsdp.as_slice(), rsdp_offset)
-        .expect("Error writing RSDP");
+    write_acpi_buffer(
+        &mut buffer,
+        rsdp_offset.0 as usize,
+        rsdp.as_slice(),
+        rsdp_offset.0 as usize,
+    );
 
+    guest_mem
+        .write_slice(buffer.as_slice(), rsdp_offset)
+        .expect("Error writing all");
+
+    debug!("xxxxxxxxxxxxxxxxxxxxxxxxx");
+    debug!(
+        "xsdt_offset.0 - rsdp_offset.0 + xsdt.len() = 0x{:x}",
+        xsdt_offset.0 - rsdp_offset.0 + xsdt.len() as u64
+    );
+    debug!("buffer.len() = 0x{:x}", buffer.len());
     rsdp_offset
 }
