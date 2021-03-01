@@ -367,6 +367,8 @@ pub fn create_acpi_tables(
     memory_manager: &Arc<Mutex<MemoryManager>>,
     numa_nodes: &NumaNodes,
 ) -> GuestAddress {
+    let mut prev_tbl_len: u64;
+    let mut prev_tbl_off: GuestAddress;
     let rsdp_offset = arch::layout::RSDP_POINTER;
     let mut tables: Vec<u64> = Vec::new();
 
@@ -393,85 +395,79 @@ pub fn create_acpi_tables(
         .expect("Error writing MADT table");
     tables.push(madt_offset.0);
 
+    #[cfg(target_arch = "x86_64")]
+    {
+        prev_tbl_len = madt.len() as u64;
+        prev_tbl_off = madt_offset;
+    }
+
     // GTDT
     #[cfg(target_arch = "aarch64")]
-    let gtdt = create_gtdt_table();
-    #[cfg(target_arch = "aarch64")]
-    let gtdt_offset = madt_offset.checked_add(madt.len() as u64).unwrap();
-    #[cfg(target_arch = "aarch64")]
-    guest_mem
-        .write_slice(gtdt.as_slice(), gtdt_offset)
-        .expect("Error writing GTDT table");
-    #[cfg(target_arch = "aarch64")]
-    tables.push(gtdt_offset.0);
+    {
+        let gtdt = create_gtdt_table();
+        let gtdt_offset = madt_offset.checked_add(madt.len() as u64).unwrap();
+        guest_mem
+            .write_slice(gtdt.as_slice(), gtdt_offset)
+            .expect("Error writing GTDT table");
+        tables.push(gtdt_offset.0);
+        prev_tbl_len = gtdt.len() as u64;
+        prev_tbl_off = gtdt_offset;
+    }
 
     // MCFG
     let mcfg = create_mcfg_table();
-    #[cfg(target_arch = "x86_64")]
-    let mcfg_offset = madt_offset.checked_add(madt.len() as u64).unwrap();
-    #[cfg(target_arch = "aarch64")]
-    let mcfg_offset = gtdt_offset.checked_add(gtdt.len() as u64).unwrap();
+    let mcfg_offset = prev_tbl_off.checked_add(prev_tbl_len).unwrap();
     guest_mem
         .write_slice(mcfg.as_slice(), mcfg_offset)
         .expect("Error writing MCFG table");
     tables.push(mcfg_offset.0);
 
+    #[cfg(target_arch = "x86_64")]
+    {
+        prev_tbl_len = mcfg.len() as u64;
+        prev_tbl_off = mcfg_offset;
+    }
+
     // SPCR
     #[cfg(target_arch = "aarch64")]
-    let is_serial_on = device_manager
-        .lock()
-        .unwrap()
-        .get_device_info()
-        .clone()
-        .get(&(DeviceType::Serial, DeviceType::Serial.to_string()))
-        .is_some();
-    #[cfg(target_arch = "aarch64")]
-    let serial_device_addr = arch::layout::LEGACY_SERIAL_MAPPED_IO_START;
-    #[cfg(target_arch = "aarch64")]
-    let serial_device_irq = if is_serial_on {
-        device_manager
+    {
+        let is_serial_on = device_manager
             .lock()
             .unwrap()
             .get_device_info()
             .clone()
             .get(&(DeviceType::Serial, DeviceType::Serial.to_string()))
-            .unwrap()
-            .irq()
-    } else {
-        // If serial is turned off, add a fake device with invalid irq.
-        31
-    };
-    #[cfg(target_arch = "aarch64")]
-    let spcr = create_spcr_table(serial_device_addr, serial_device_irq);
-    #[cfg(target_arch = "aarch64")]
-    let spcr_offset = mcfg_offset.checked_add(mcfg.len() as u64).unwrap();
-    #[cfg(target_arch = "aarch64")]
-    guest_mem
-        .write_slice(spcr.as_slice(), spcr_offset)
-        .expect("Error writing SPCR table");
-    #[cfg(target_arch = "aarch64")]
-    tables.push(spcr_offset.0);
+            .is_some();
+        let serial_device_addr = arch::layout::LEGACY_SERIAL_MAPPED_IO_START;
+        let serial_device_irq = if is_serial_on {
+            device_manager
+                .lock()
+                .unwrap()
+                .get_device_info()
+                .clone()
+                .get(&(DeviceType::Serial, DeviceType::Serial.to_string()))
+                .unwrap()
+                .irq()
+        } else {
+            // If serial is turned off, add a fake device with invalid irq.
+            31
+        };
+        let spcr = create_spcr_table(serial_device_addr, serial_device_irq);
+        let spcr_offset = mcfg_offset.checked_add(mcfg.len() as u64).unwrap();
+        guest_mem
+            .write_slice(spcr.as_slice(), spcr_offset)
+            .expect("Error writing SPCR table");
+        tables.push(spcr_offset.0);
+        prev_tbl_len = spcr.len() as u64;
+        prev_tbl_off = spcr_offset;
+    }
 
     // SRAT and SLIT
     // Only created if the NUMA nodes list is not empty.
-    let (prev_tbl_len, prev_tbl_off) = if numa_nodes.is_empty() {
-        (
-            #[cfg(target_arch = "x86_64")]
-            mcfg.len(),
-            #[cfg(target_arch = "aarch64")]
-            spcr.len(),
-            #[cfg(target_arch = "x86_64")]
-            mcfg_offset,
-            #[cfg(target_arch = "aarch64")]
-            spcr_offset,
-        )
-    } else {
+    if !numa_nodes.is_empty() {
         // SRAT
         let srat = create_srat_table(numa_nodes);
-        #[cfg(target_arch = "x86_64")]
-        let srat_offset = mcfg_offset.checked_add(mcfg.len() as u64).unwrap();
-        #[cfg(target_arch = "aarch64")]
-        let srat_offset = spcr_offset.checked_add(spcr.len() as u64).unwrap();
+        let srat_offset = prev_tbl_off.checked_add(prev_tbl_len).unwrap();
         guest_mem
             .write_slice(srat.as_slice(), srat_offset)
             .expect("Error writing SRAT table");
@@ -485,19 +481,21 @@ pub fn create_acpi_tables(
             .expect("Error writing SRAT table");
         tables.push(slit_offset.0);
 
-        (slit.len(), slit_offset)
+        prev_tbl_len = slit.len() as u64;
+        prev_tbl_off = slit_offset;
     };
 
     #[cfg(target_arch = "aarch64")]
-    let iort = create_iort_table();
-    #[cfg(target_arch = "aarch64")]
-    let iort_offset = prev_tbl_off.checked_add(prev_tbl_len as u64).unwrap();
-    #[cfg(target_arch = "aarch64")]
-    guest_mem
-        .write_slice(iort.as_slice(), iort_offset)
-        .expect("Error writing IORT table");
-    #[cfg(target_arch = "aarch64")]
-    tables.push(iort_offset.0);
+    {
+        let iort = create_iort_table();
+        let iort_offset = prev_tbl_off.checked_add(prev_tbl_len).unwrap();
+        guest_mem
+            .write_slice(iort.as_slice(), iort_offset)
+            .expect("Error writing IORT table");
+        tables.push(iort_offset.0);
+        prev_tbl_len = iort.len() as u64;
+        prev_tbl_off = iort_offset;
+    }
 
     // XSDT
     let mut xsdt = Sdt::new(*b"XSDT", 36, 1, *b"CLOUDH", *b"CHXSDT  ", 1);
@@ -505,11 +503,7 @@ pub fn create_acpi_tables(
         xsdt.append(table);
     }
     xsdt.update_checksum();
-
-    #[cfg(target_arch = "aarch64")]
-    let xsdt_offset = iort_offset.checked_add(iort.len() as u64).unwrap();
-    #[cfg(target_arch = "x86_64")]
-    let xsdt_offset = prev_tbl_off.checked_add(prev_tbl_len as u64).unwrap();
+    let xsdt_offset = prev_tbl_off.checked_add(prev_tbl_len).unwrap();
     guest_mem
         .write_slice(xsdt.as_slice(), xsdt_offset)
         .expect("Error writing XSDT table");
