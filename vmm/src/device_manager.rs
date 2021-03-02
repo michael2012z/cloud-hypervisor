@@ -889,6 +889,8 @@ pub struct DeviceManager {
 
     #[cfg(feature = "acpi")]
     acpi_address: GuestAddress,
+
+    acpi_rom: Option<Arc<Mutex<devices::AcpiRom>>>,
 }
 
 impl DeviceManager {
@@ -974,6 +976,7 @@ impl DeviceManager {
             acpi_address,
             serial_pty: None,
             console_pty: None,
+            acpi_rom: None,
         };
 
         let device_manager = Arc::new(Mutex::new(device_manager));
@@ -1313,6 +1316,15 @@ impl DeviceManager {
         Ok(interrupt_controller)
     }
 
+    pub fn set_acpi_rom(&mut self, buf: Option<Vec<u8>>) {
+        if let Some(acpi_rom) = &self.acpi_rom {
+            debug!("---- set_acpi_rom: good");
+            acpi_rom.lock().unwrap().set_buf(buf);
+        } else {
+            debug!("---- set_acpi_rom: bad");
+        }
+    }
+
     #[cfg(feature = "acpi")]
     fn add_acpi_devices(
         &mut self,
@@ -1320,6 +1332,20 @@ impl DeviceManager {
         reset_evt: EventFd,
         exit_evt: EventFd,
     ) -> DeviceManagerResult<Option<Arc<Mutex<devices::AcpiGEDDevice>>>> {
+        let acpi_rom = Arc::new(Mutex::new(devices::AcpiRom::new()));
+        self.bus_devices
+            .push(Arc::clone(&acpi_rom) as Arc<Mutex<dyn BusDevice>>);
+        self.address_manager
+            .mmio_bus
+            .insert(
+                acpi_rom.clone(),
+                arch::layout::RSDP_POINTER.0,
+                0x20_0000 as u64,
+            )
+            .map_err(DeviceManagerError::BusError)?;
+
+        self.acpi_rom = Some(acpi_rom);
+
         let shutdown_device = Arc::new(Mutex::new(devices::AcpiShutdownDevice::new(
             exit_evt, reset_evt,
         )));

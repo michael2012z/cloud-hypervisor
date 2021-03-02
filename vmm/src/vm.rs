@@ -1033,13 +1033,19 @@ impl Vm {
 
         #[cfg(feature = "acpi")]
         {
-            rsdp_addr = Some(crate::acpi::create_acpi_tables(
+            let (rsdp_addr_rom, buffer) = crate::acpi::create_acpi_tables(
                 &mem,
                 &self.device_manager,
                 &self.cpu_manager,
                 &self.memory_manager,
                 &self.numa_nodes,
-            ));
+            );
+            &self
+                .device_manager
+                .lock()
+                .unwrap()
+                .set_acpi_rom(Some(buffer));
+            rsdp_addr = Some(rsdp_addr_rom);
         }
 
         // Call `configure_system` and pass the GIC devices out, so that

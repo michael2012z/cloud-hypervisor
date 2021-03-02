@@ -387,13 +387,14 @@ fn write_acpi_buffer(buffer: &mut Vec<u8>, rsdp_base: usize, table: &[u8], offse
     }
 }
 
+#[allow(unused_variables)]
 pub fn create_acpi_tables(
     guest_mem: &GuestMemoryMmap,
     device_manager: &Arc<Mutex<DeviceManager>>,
     cpu_manager: &Arc<Mutex<CpuManager>>,
     memory_manager: &Arc<Mutex<MemoryManager>>,
     numa_nodes: &NumaNodes,
-) -> GuestAddress {
+) -> (GuestAddress, Vec<u8>) {
     let mut buffer: Vec<u8> = Vec::with_capacity(0x0020_0000 as usize);
     let mut prev_tbl_len: u64;
     let mut prev_tbl_off: GuestAddress;
@@ -574,6 +575,7 @@ pub fn create_acpi_tables(
         rsdp_offset.0 as usize,
     );
 
+    #[cfg(target_arch = "x86_64")]
     guest_mem
         .write_slice(buffer.as_slice(), rsdp_offset)
         .expect("Error writing all");
@@ -584,5 +586,6 @@ pub fn create_acpi_tables(
         xsdt_offset.0 - rsdp_offset.0 + xsdt.len() as u64
     );
     debug!("buffer.len() = 0x{:x}", buffer.len());
-    rsdp_offset
+
+    (rsdp_offset, buffer)
 }

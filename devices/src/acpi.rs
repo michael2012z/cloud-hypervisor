@@ -14,6 +14,44 @@ use AcpiNotificationFlags;
 
 pub const GED_DEVICE_ACPI_SIZE: usize = 0x1;
 
+pub struct AcpiRom {
+    buf: Option<Vec<u8>>,
+}
+
+impl AcpiRom {
+    pub fn new() -> AcpiRom {
+        AcpiRom { buf: None }
+    }
+
+    pub fn set_buf(&mut self, buf: Option<Vec<u8>>) {
+        self.buf = buf;
+    }
+}
+
+impl BusDevice for AcpiRom {
+    fn read(&mut self, base: u64, offset: u64, data: &mut [u8]) {
+        debug!("^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^");
+        debug!(
+            "base: 0x{:x}, offset: 0x{:x}, data.len: {}",
+            base,
+            offset,
+            data.len()
+        );
+        if let Some(buf) = &self.buf {
+            for i in 0..data.len() {
+                let index = (base + offset - arch::layout::RSDP_POINTER.0) as usize + i;
+                debug!("buf[{}] = 0x{:x}", index, buf[index]);
+                data[i] = buf[index];
+            }
+        }
+    }
+
+    fn write(&mut self, _base: u64, _offset: u64, _data: &[u8]) -> Option<Arc<Barrier>> {
+        debug!("^^^ this should not happen ^^^");
+        None
+    }
+}
+
 /// A device for handling ACPI shutdown and reboot
 pub struct AcpiShutdownDevice {
     exit_evt: EventFd,
