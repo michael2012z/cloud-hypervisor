@@ -18,7 +18,7 @@ use super::super::InitramfsConfig;
 use super::get_fdt_addr;
 use super::gic::GicDevice;
 use super::layout::{
-    FDT_MAX_SIZE, MEM_32BIT_DEVICES_SIZE, MEM_32BIT_DEVICES_START, PCI_MMCONFIG_SIZE,
+    FDT_MAX_SIZE, IRQ_BASE, MEM_32BIT_DEVICES_SIZE, MEM_32BIT_DEVICES_START, PCI_MMCONFIG_SIZE,
     PCI_MMCONFIG_START,
 };
 use crate::aarch64::fdt::Error::CstringFdtTransform;
@@ -495,7 +495,11 @@ fn create_serial_node<T: DeviceInfoForFdt + Clone + Debug>(
 ) -> Result<()> {
     let compatible = b"arm,pl011\0arm,primecell\0";
     let serial_reg_prop = generate_prop64(&[dev_info.addr(), dev_info.length()]);
-    let irq = generate_prop32(&[GIC_FDT_IRQ_TYPE_SPI, dev_info.irq(), IRQ_TYPE_EDGE_RISING]);
+    let irq = generate_prop32(&[
+        GIC_FDT_IRQ_TYPE_SPI,
+        dev_info.irq() - IRQ_BASE,
+        IRQ_TYPE_EDGE_RISING,
+    ]);
 
     append_begin_node(fdt, &format!("pl011@{:x}", dev_info.addr()))?;
     append_property(fdt, "compatible", compatible)?;
@@ -514,7 +518,11 @@ fn create_rtc_node<T: DeviceInfoForFdt + Clone + Debug>(
 ) -> Result<()> {
     let compatible = b"arm,pl031\0arm,primecell\0";
     let rtc_reg_prop = generate_prop64(&[dev_info.addr(), dev_info.length()]);
-    let irq = generate_prop32(&[GIC_FDT_IRQ_TYPE_SPI, dev_info.irq(), IRQ_TYPE_LEVEL_HI]);
+    let irq = generate_prop32(&[
+        GIC_FDT_IRQ_TYPE_SPI,
+        dev_info.irq() - IRQ_BASE,
+        IRQ_TYPE_LEVEL_HI,
+    ]);
     append_begin_node(fdt, &format!("rtc@{:x}", dev_info.addr()))?;
     append_property(fdt, "compatible", compatible)?;
     append_property(fdt, "reg", &rtc_reg_prop)?;
@@ -533,7 +541,11 @@ fn create_gpio_node<T: DeviceInfoForFdt + Clone + Debug>(
     // PL061 GPIO controller node
     let compatible = b"arm,pl061\0arm,primecell\0";
     let gpio_reg_prop = generate_prop64(&[dev_info.addr(), dev_info.length()]);
-    let irq = generate_prop32(&[GIC_FDT_IRQ_TYPE_SPI, dev_info.irq(), IRQ_TYPE_EDGE_RISING]);
+    let irq = generate_prop32(&[
+        GIC_FDT_IRQ_TYPE_SPI,
+        dev_info.irq() - IRQ_BASE,
+        IRQ_TYPE_EDGE_RISING,
+    ]);
     append_begin_node(fdt, &format!("pl061@{:x}", dev_info.addr()))?;
     append_property(fdt, "compatible", compatible)?;
     append_property(fdt, "reg", &gpio_reg_prop)?;
