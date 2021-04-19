@@ -18,8 +18,8 @@ use super::super::InitramfsConfig;
 use super::get_fdt_addr;
 use super::gic::GicDevice;
 use super::layout::{
-    FDT_MAX_SIZE, IRQ_BASE, MEM_32BIT_DEVICES_SIZE, MEM_32BIT_DEVICES_START, PCI_MMCONFIG_SIZE,
-    PCI_MMCONFIG_START,
+    FDT_MAX_SIZE, IRQ_BASE, MEM_32BIT_DEVICES_SIZE, MEM_32BIT_DEVICES_START, MEM_PCI_IO_SIZE,
+    MEM_PCI_IO_START, PCI_MMCONFIG_SIZE, PCI_MMCONFIG_START,
 };
 use crate::aarch64::fdt::Error::CstringFdtTransform;
 use vm_memory::{Address, Bytes, GuestAddress, GuestMemory, GuestMemoryError, GuestMemoryMmap};
@@ -609,6 +609,14 @@ fn create_pci_nodes(fdt: &mut Vec<u8>, pci_device_base: u64, pci_device_size: u6
     // See Documentation/devicetree/bindings/pci/host-generic-pci.txt in the kernel
     // and https://elinux.org/Device_Tree_Usage.
     let ranges = generate_prop32(&[
+        // io addresses
+        0x1000000,
+        0 as u32,
+        0 as u32,
+        (MEM_PCI_IO_START.0 >> 32) as u32,
+        MEM_PCI_IO_START.0 as u32,
+        (MEM_PCI_IO_SIZE >> 32) as u32,
+        MEM_PCI_IO_SIZE as u32,
         // mmio addresses
         0x2000000,                                // (ss = 10: 32-bit memory space)
         (MEM_32BIT_DEVICES_START.0 >> 32) as u32, // PCI address

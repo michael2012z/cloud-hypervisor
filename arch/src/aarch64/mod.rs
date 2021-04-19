@@ -83,8 +83,8 @@ pub fn arch_memory_regions(size: GuestUsize) -> Vec<(GuestAddress, usize, Region
         // 0 ~ 256 MiB: Reserved
         (
             GuestAddress(0),
-            layout::MEM_32BIT_DEVICES_START.0 as usize,
-            RegionType::Reserved,
+            layout::UEFI_SIZE as usize,
+            RegionType::Ram,
         ),
         // 256 MiB ~ 1 G: MMIO space
         (
@@ -179,6 +179,11 @@ pub fn initramfs_load_addr(
 /// Returns the memory address where the kernel could be loaded.
 pub fn get_kernel_start() -> u64 {
     layout::KERNEL_START
+}
+
+///Return guest memory address where the uefi should be loaded.
+pub fn get_uefi_start() -> u64 {
+     layout::UEFI_START
 }
 
 // Auxiliary function to get the address where the device tree blob is loaded.
