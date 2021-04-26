@@ -355,7 +355,7 @@ mod tests {
 
             let mut fw_path = workload_path;
             #[cfg(target_arch = "aarch64")]
-            fw_path.push("Image");
+            fw_path.push("CLOUDHV_EFI.fd");
             #[cfg(target_arch = "x86_64")]
             fw_path.push("hypervisor-fw");
             let fw_path = String::from(fw_path.to_str().unwrap());
@@ -2000,7 +2000,7 @@ mod tests {
         use crate::tests::*;
 
         #[test]
-        #[cfg(target_arch = "x86_64")]
+        #[cfg(any(target_arch = "x86_64", feature = "acpi"))]
         fn test_simple_launch() {
             let bionic = UbuntuDiskConfig::new(BIONIC_IMAGE_NAME.to_string());
             let focal = UbuntuDiskConfig::new(FOCAL_IMAGE_NAME.to_string());
