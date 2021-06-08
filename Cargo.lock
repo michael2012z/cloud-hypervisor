@@ -11,9 +11,9 @@ dependencies = [
 
 [[package]]
 name = "addr2line"
-version = "0.15.1"
+version = "0.15.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "03345e98af8f3d786b6d9f656ccfa6ac316d954e92bc4841f0bba20789d5fb5a"
+checksum = "e7a2e47a1fbe209ee101dd6d61285226744c6c8d3c21c8dc878ba6cb9f467f3a"
 dependencies = [
  "gimli",
 ]
@@ -97,9 +97,9 @@ checksum = "cdb031dd78e28731d87d56cc8ffef4a8f36ca26c38fe2de700543e627f8a464a"
 
 [[package]]
 name = "backtrace"
-version = "0.3.59"
+version = "0.3.60"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4717cfcbfaa661a0fd48f8453951837ae7e8f81e481fbb136e3202d72805a744"
+checksum = "b7815ea54e4d821e791162e078acbebfd6d8c8939cd559c9335dceb1c8ca7282"
 dependencies = [
  "addr2line",
  "cc",
@@ -539,7 +539,7 @@ dependencies = [
 [[package]]
 name = "mshv-bindings"
 version = "0.1.0"
-source = "git+https://github.com/cloud-hypervisor/mshv?branch=master#936e2e34af0af50f4383ab8a208e03dfba7ed206"
+source = "git+https://github.com/cloud-hypervisor/mshv?branch=master#1024e9a821d33079452c20477b6ecb976ff795ad"
 dependencies = [
  "libc",
  "serde",
@@ -551,7 +551,7 @@ dependencies = [
 [[package]]
 name = "mshv-ioctls"
 version = "0.1.0"
-source = "git+https://github.com/cloud-hypervisor/mshv?branch=master#936e2e34af0af50f4383ab8a208e03dfba7ed206"
+source = "git+https://github.com/cloud-hypervisor/mshv?branch=master#1024e9a821d33079452c20477b6ecb976ff795ad"
 dependencies = [
  "libc",
  "mshv-bindings",
@@ -588,9 +588,12 @@ dependencies = [
 
 [[package]]
 name = "object"
-version = "0.24.0"
+version = "0.25.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1a5b3dd1c072ee7963717671d1ca129f1048fda25edea6b752bfc71ac8854170"
+checksum = "f8bc1d42047cf336f0f939c99e97183cf31551bf0f2865a2ec9c8d91fd4ffb5e"
+dependencies = [
+ "memchr",
+]
 
 [[package]]
 name = "openssl-sys"
@@ -894,9 +897,9 @@ dependencies = [
 
 [[package]]
 name = "signal-hook"
-version = "0.3.8"
+version = "0.3.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ef33d6d0cd06e0840fba9985aab098c147e67e05cee14d412d3345ed14ff30ac"
+checksum = "470c5a6397076fae0094aaf06a08e6ba6f37acb77d3b1b91ea92b4d6c8650c39"
 dependencies = [
  "libc",
  "signal-hook-registry",
@@ -904,9 +907,9 @@ dependencies = [
 
 [[package]]
 name = "signal-hook-registry"
-version = "1.3.0"
+version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "16f1d0fef1604ba8f7a073c7e701f213e056707210e9020af4528e0101ce11a6"
+checksum = "e51e73328dc4ac0c7ccbda3a494dfa03df1de2f46018127f60c693f2648455b0"
 dependencies = [
  "libc",
 ]
@@ -1088,7 +1091,7 @@ dependencies = [
 [[package]]
 name = "vfio-ioctls"
 version = "0.1.0"
-source = "git+https://github.com/rust-vmm/vfio-ioctls?branch=master#5cb8550556620546e74b9fe6d1174e0d1fc83888"
+source = "git+https://github.com/rust-vmm/vfio-ioctls?branch=master#0f7eb6f855b80d60a7e09ac6df43b46ba69f9e9e"
 dependencies = [
  "byteorder",
  "kvm-bindings",
@@ -1102,7 +1105,7 @@ dependencies = [
 [[package]]
 name = "vhost"
 version = "0.1.0"
-source = "git+https://github.com/rust-vmm/vhost?branch=master#e4ba734144ac7a06cd8d6a43be3a3bf8e9e413a1"
+source = "git+https://github.com/rust-vmm/vhost?branch=master#30ba3e7bbe9e0542cf480f44bc6845a8dbd2a6ba"
 dependencies = [
  "bitflags",
  "libc",
@@ -1223,13 +1226,12 @@ dependencies = [
 [[package]]
 name = "vm-fdt"
 version = "0.1.0"
-source = "git+https://github.com/rust-vmm/vm-fdt?branch=master#956b5a5ea1d7b92026e82bef2aa6a85b0c2200b5"
+source = "git+https://github.com/rust-vmm/vm-fdt?branch=master#2e4ebdeb27be5b450b51b79fdeeeee3750d42182"
 
 [[package]]
 name = "vm-memory"
 version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "625f401b1b8b3ac3d43f53903cd138cfe840bd985f8581e553027b31d2bb8ae8"
+source = "git+https://github.com/rust-vmm/vm-memory?rev=5bd7138758183a73ac0da27ce40c004d95f1a7e9#5bd7138758183a73ac0da27ce40c004d95f1a7e9"
 dependencies = [
  "arc-swap",
  "libc",
@@ -1255,9 +1257,6 @@ name = "vm-virtio"
 version = "0.1.0"
 dependencies = [
  "log",
- "serde",
- "serde_derive",
- "serde_json",
  "virtio-bindings",
  "vm-memory",
 ]
