@@ -86,22 +86,8 @@ pub fn configure_vcpu(
 }
 
 pub fn arch_memory_regions(size: GuestUsize) -> Vec<(GuestAddress, usize, RegionType)> {
-    // Normally UEFI should be loaded to a flash area at the beginning of memory.
-    // But now flash memory type is not supported.
-    // As a workaround, we take 4 MiB memory from the main RAM for UEFI.
-    // As a result, the RAM that the guest can see is less than what has been
-    // assigned in command line, when ACPI and UEFI is enabled.
-    let ram_deduction = if cfg!(feature = "acpi") {
-        layout::UEFI_SIZE
-    } else {
-        0
-    };
-
     vec![
         // 0 ~ 4 MiB: Reserved for UEFI space
-        #[cfg(feature = "acpi")]
-        (GuestAddress(0), layout::UEFI_SIZE as usize, RegionType::Ram),
-        #[cfg(not(feature = "acpi"))]
         (
             GuestAddress(0),
             layout::UEFI_SIZE as usize,
@@ -128,7 +114,7 @@ pub fn arch_memory_regions(size: GuestUsize) -> Vec<(GuestAddress, usize, Region
         // 1 GiB ~ : Ram
         (
             GuestAddress(layout::RAM_64BIT_START),
-            (size - ram_deduction) as usize,
+            size as usize,
             RegionType::Ram,
         ),
     ]

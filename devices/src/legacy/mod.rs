@@ -7,6 +7,8 @@
 
 #[cfg(feature = "cmos")]
 mod cmos;
+#[cfg(target_arch = "aarch64")]
+mod flash;
 #[cfg(feature = "fwdebug")]
 mod fwdebug;
 #[cfg(target_arch = "aarch64")]
@@ -25,6 +27,10 @@ pub use self::fwdebug::FwDebugDevice;
 pub use self::i8042::I8042Device;
 pub use self::serial::Serial;
 
+#[cfg(target_arch = "aarch64")]
+pub use self::flash::Error as FlashDeviceError;
+#[cfg(target_arch = "aarch64")]
+pub use self::flash::Flash;
 #[cfg(target_arch = "aarch64")]
 pub use self::gpio_pl061::Error as GpioDeviceError;
 #[cfg(target_arch = "aarch64")]

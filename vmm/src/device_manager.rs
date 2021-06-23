@@ -46,6 +46,8 @@ use devices::gic;
 #[cfg(target_arch = "x86_64")]
 use devices::ioapic;
 #[cfg(target_arch = "aarch64")]
+use devices::legacy::Flash;
+#[cfg(target_arch = "aarch64")]
 use devices::legacy::Pl011;
 #[cfg(target_arch = "x86_64")]
 use devices::legacy::Serial;
@@ -69,7 +71,7 @@ use seccomp::SeccompAction;
 use std::collections::HashMap;
 use std::convert::TryInto;
 use std::fs::{read_link, File, OpenOptions};
-use std::io::{self, sink, stdout, Seek, SeekFrom};
+use std::io::{self, sink, stdout, Read, Seek, SeekFrom};
 use std::mem::zeroed;
 use std::num::Wrapping;
 use std::os::unix::fs::OpenOptionsExt;
@@ -419,6 +421,9 @@ pub enum DeviceManagerError {
 
     /// Failed removing DMA mapping handler from virtio-mem device.
     RemoveDmaMappingHandlerVirtioMem(virtio_devices::mem::Error),
+
+    /// Failed to create Flash device
+    CreateFlashDevice(devices::legacy::FlashDeviceError),
 }
 pub type DeviceManagerResult<T> = result::Result<T, DeviceManagerError>;
 
@@ -920,6 +925,9 @@ pub struct DeviceManager {
     #[cfg(target_arch = "aarch64")]
     // GPIO device for AArch64
     gpio_device: Option<Arc<Mutex<devices::legacy::Gpio>>>,
+
+    #[cfg(target_arch = "aarch64")]
+    flash_device: Option<Arc<Mutex<devices::legacy::Flash>>>,
 }
 
 impl DeviceManager {
@@ -1005,6 +1013,8 @@ impl DeviceManager {
             virtio_mem_devices: Vec::new(),
             #[cfg(target_arch = "aarch64")]
             gpio_device: None,
+            #[cfg(target_arch = "aarch64")]
+            flash_device: None,
         };
 
         let device_manager = Arc::new(Mutex::new(device_manager));
@@ -1436,6 +1446,36 @@ impl DeviceManager {
                 .insert(fwdebug, 0x402, 0x1)
                 .map_err(DeviceManagerError::BusError)?;
         }
+
+        Ok(())
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    pub fn create_flash_device<F>(
+        &mut self,
+        start: u64,
+        size: u64,
+        image: &mut F,
+    ) -> DeviceManagerResult<()>
+    where
+        F: Read + Seek,
+    {
+        // Add a Flash device
+
+        let flash_device = Arc::new(Mutex::new(
+            devices::legacy::Flash::new(start, size, image, true)
+                .map_err(DeviceManagerError::CreateFlashDevice)?,
+        ));
+
+        self.bus_devices
+            .push(Arc::clone(&flash_device) as Arc<Mutex<dyn BusDevice>>);
+
+        self.flash_device = Some(flash_device.clone());
+
+        self.address_manager
+            .mmio_bus
+            .insert(flash_device, start, size)
+            .map_err(DeviceManagerError::BusError)?;
 
         Ok(())
     }

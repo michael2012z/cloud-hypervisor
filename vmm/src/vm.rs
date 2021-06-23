@@ -95,7 +95,7 @@ pub enum Error {
 
     #[cfg(target_arch = "aarch64")]
     /// Cannot load the UEFI binary in memory
-    UefiLoad(arch::aarch64::uefi::Error),
+    UefiLoad(device_manager::DeviceManagerError),
 
     /// Cannot load the initramfs in memory
     InitramfsLoad,
@@ -893,13 +893,17 @@ impl Vm {
             // If failed, retry to load it as UEFI binary.
             // As the UEFI binary is formatless, it must be the last option to try.
             Err(linux_loader::loader::Error::Pe(InvalidImageMagicNumber)) => {
-                arch::aarch64::uefi::load_uefi(
-                    mem.deref(),
-                    GuestAddress(arch::get_uefi_start()),
-                    &mut kernel,
-                )
-                .map_err(Error::UefiLoad)?;
-                // The entry point offset in UEFI image is always 0.
+                &self
+                    .device_manager
+                    .lock()
+                    .unwrap()
+                    .create_flash_device(
+                        arch::layout::UEFI_START,
+                        arch::layout::UEFI_SIZE,
+                        &mut kernel,
+                    )
+                    .map_err(Error::UefiLoad)?;
+
                 return Ok(EntryPoint {
                     entry_addr: GuestAddress(arch::get_uefi_start()),
                 });
