@@ -1118,7 +1118,7 @@ dependencies = [
 [[package]]
 name = "vhost"
 version = "0.1.0"
-source = "git+https://github.com/rust-vmm/vhost?branch=master#9982541776a603d30556a06df55e8c0491072763"
+source = "git+https://github.com/rust-vmm/vhost?branch=master#14d754c5c77f06d5af8fc48b2634debd5fbd9a18"
 dependencies = [
  "bitflags",
  "libc",
