@@ -269,6 +269,9 @@ pub trait Vm: Send + Sync {
     fn unregister_irqfd(&self, fd: &EventFd, gsi: u32) -> Result<()>;
     /// Creates a new KVM vCPU file descriptor and maps the memory corresponding
     fn create_vcpu(&self, id: u8, vm_ops: Option<Arc<dyn VmOps>>) -> Result<Arc<dyn Vcpu>>;
+    #[cfg(target_arch = "aarch64")]
+    fn create_vgic(&self, vcpu_count: u64) -> Result<Box<dyn GicDevice>>;
+
     /// Registers an event to be signaled whenever a certain address is written to.
     fn register_ioevent(
         &self,

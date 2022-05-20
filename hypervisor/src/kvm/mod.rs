@@ -250,6 +250,13 @@ impl vm::Vm for KvmVm {
         };
         Ok(Arc::new(vcpu))
     }
+    #[cfg(target_arch = "aarch64")]
+    ///
+    /// Creates a GIC device.
+    ///
+    fn create_vgic(&self, vcpu_count: u64) -> Result<Box<dyn GicDevice>> {
+        KvmGicV3Its::new(vm, vcpu_count)
+    }
     ///
     /// Registers an event to be signaled whenever a certain address is written to.
     ///
