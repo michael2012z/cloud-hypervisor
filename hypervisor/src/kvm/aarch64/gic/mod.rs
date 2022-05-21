@@ -9,8 +9,12 @@ pub mod redist_regs;
 pub use self::dist_regs::{get_dist_regs, read_ctlr, set_dist_regs, write_ctlr};
 pub use self::icc_regs::{get_icc_regs, set_icc_regs};
 pub use self::redist_regs::{get_redist_regs, set_redist_regs};
-use hypervisor::CpuState;
+use crate::arch::aarch64::gic::GicDevice;
+use crate::kvm::kvm_bindings;
+use crate::{CpuState, Device, Vm};
+use gicv3_its::KvmGicV3Its;
 use std::any::Any;
+use std::boxed::Box;
 use std::result;
 use std::sync::Arc;
 
@@ -18,21 +22,13 @@ use std::sync::Arc;
 #[derive(Debug)]
 pub enum Error {
     /// Error while calling KVM ioctl for setting up the global interrupt controller.
-    CreateGic(hypervisor::HypervisorVmError),
+    CreateGic(crate::HypervisorVmError),
     /// Error while setting device attributes for the GIC.
-    SetDeviceAttribute(hypervisor::HypervisorDeviceError),
+    SetDeviceAttribute(crate::HypervisorDeviceError),
     /// Error while getting device attributes for the GIC.
-    GetDeviceAttribute(hypervisor::HypervisorDeviceError),
+    GetDeviceAttribute(crate::HypervisorDeviceError),
 }
 type Result<T> = result::Result<T, Error>;
-
-use super::GicDevice;
-use super::Result;
-use crate::aarch64::gic::gicv3_its::kvm::KvmGicV3Its;
-use crate::layout;
-use hypervisor::kvm::kvm_bindings;
-use std::boxed::Box;
-use std::sync::Arc;
 
 /// Trait for GIC devices.
 pub trait KvmGicDevice: Send + Sync + GicDevice {
@@ -40,16 +36,13 @@ pub trait KvmGicDevice: Send + Sync + GicDevice {
     fn version() -> u32;
 
     /// Create the GIC device object
-    fn create_device(device: Arc<dyn hypervisor::Device>, vcpu_count: u64) -> Box<dyn GicDevice>;
+    fn create_device(device: Arc<dyn Device>, vcpu_count: u64) -> Box<dyn GicDevice>;
 
     /// Setup the device-specific attributes
-    fn init_device_attributes(
-        vm: &Arc<dyn hypervisor::Vm>,
-        gic_device: &mut dyn GicDevice,
-    ) -> Result<()>;
+    fn init_device_attributes(vm: &Arc<dyn Vm>, gic_device: &mut dyn GicDevice) -> Result<()>;
 
     /// Initialize a GIC device
-    fn init_device(vm: &Arc<dyn hypervisor::Vm>) -> Result<Arc<dyn hypervisor::Device>> {
+    fn init_device(vm: &Arc<dyn Vm>) -> Result<Arc<dyn Device>> {
         let mut gic_device = kvm_bindings::kvm_create_device {
             type_: Self::version(),
             fd: 0,
@@ -62,7 +55,7 @@ pub trait KvmGicDevice: Send + Sync + GicDevice {
 
     /// Set a GIC device attribute
     fn set_device_attribute(
-        device: &Arc<dyn hypervisor::Device>,
+        device: &Arc<dyn Device>,
         group: u32,
         attr: u64,
         addr: u64,
@@ -83,7 +76,7 @@ pub trait KvmGicDevice: Send + Sync + GicDevice {
 
     /// Get a GIC device attribute
     fn get_device_attribute(
-        device: &Arc<dyn hypervisor::Device>,
+        device: &Arc<dyn Device>,
         group: u32,
         attr: u64,
         addr: u64,
@@ -133,7 +126,7 @@ pub trait KvmGicDevice: Send + Sync + GicDevice {
 
     /// Method to initialize the GIC device
     #[allow(clippy::new_ret_no_self)]
-    fn new(vm: &Arc<dyn hypervisor::Vm>, vcpu_count: u64) -> Result<Box<dyn GicDevice>> {
+    fn new(vm: &Arc<dyn Vm>, vcpu_count: u64) -> Result<Box<dyn GicDevice>> {
         let vgic_fd = Self::init_device(vm)?;
 
         let mut device = Self::create_device(vgic_fd, vcpu_count);
@@ -144,18 +137,18 @@ pub trait KvmGicDevice: Send + Sync + GicDevice {
 
         Ok(device)
     }
-}
 
-/// Function that saves RDIST pending tables into guest RAM.
-///
-/// The tables get flushed to guest RAM whenever the VM gets stopped.
-pub fn save_pending_tables(gic: &Arc<dyn hypervisor::Device>) -> Result<()> {
-    let init_gic_attr = kvm_bindings::kvm_device_attr {
-        group: kvm_bindings::KVM_DEV_ARM_VGIC_GRP_CTRL,
-        attr: u64::from(kvm_bindings::KVM_DEV_ARM_VGIC_SAVE_PENDING_TABLES),
-        addr: 0,
-        flags: 0,
-    };
-    gic.set_device_attr(&init_gic_attr)
-        .map_err(super::Error::SetDeviceAttribute)
+    /// Function that saves RDIST pending tables into guest RAM.
+    ///
+    /// The tables get flushed to guest RAM whenever the VM gets stopped.
+    fn save_pending_tables(gic: &Arc<dyn Device>) -> Result<()> {
+        let init_gic_attr = kvm_bindings::kvm_device_attr {
+            group: kvm_bindings::KVM_DEV_ARM_VGIC_GRP_CTRL,
+            attr: u64::from(kvm_bindings::KVM_DEV_ARM_VGIC_SAVE_PENDING_TABLES),
+            addr: 0,
+            flags: 0,
+        };
+        gic.set_device_attr(&init_gic_attr)
+            .map_err(super::Error::SetDeviceAttribute)
+    }
 }

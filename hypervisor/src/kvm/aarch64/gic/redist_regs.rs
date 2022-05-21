@@ -1,9 +1,10 @@
+// Copyright 2022 Arm Limited (or its affiliates). All rights reserved.
 // Copyright 2020 Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{Error, Result};
-use hypervisor::kvm::kvm_bindings::{kvm_device_attr, KVM_DEV_ARM_VGIC_GRP_REDIST_REGS};
-use hypervisor::CpuState;
+use crate::kvm::kvm_bindings::{kvm_device_attr, KVM_DEV_ARM_VGIC_GRP_REDIST_REGS};
+use crate::CpuState;
 use std::sync::Arc;
 
 // Relevant redistributor registers that we want to save/restore.
@@ -83,7 +84,7 @@ static VGIC_SGI_REGS: &[RdistReg] = &[
 ];
 
 fn redist_attr_access(
-    gic: &Arc<dyn hypervisor::Device>,
+    gic: &Arc<dyn Device>,
     offset: u32,
     typer: u64,
     val: &u32,
@@ -106,7 +107,7 @@ fn redist_attr_access(
 }
 
 fn access_redists_aux(
-    gic: &Arc<dyn hypervisor::Device>,
+    gic: &Arc<dyn Device>,
     gicr_typer: &[u64],
     state: &mut Vec<u32>,
     reg_list: &[RdistReg],
@@ -136,7 +137,7 @@ fn access_redists_aux(
 }
 
 /// Get redistributor registers.
-pub fn get_redist_regs(gic: &Arc<dyn hypervisor::Device>, gicr_typer: &[u64]) -> Result<Vec<u32>> {
+pub fn get_redist_regs(gic: &Arc<dyn Device>, gicr_typer: &[u64]) -> Result<Vec<u32>> {
     let mut state = Vec::new();
     let mut idx: usize = 0;
     access_redists_aux(
@@ -153,11 +154,7 @@ pub fn get_redist_regs(gic: &Arc<dyn hypervisor::Device>, gicr_typer: &[u64]) ->
 }
 
 /// Set redistributor registers.
-pub fn set_redist_regs(
-    gic: &Arc<dyn hypervisor::Device>,
-    gicr_typer: &[u64],
-    state: &[u32],
-) -> Result<()> {
+pub fn set_redist_regs(gic: &Arc<dyn Device>, gicr_typer: &[u64], state: &[u32]) -> Result<()> {
     let mut idx: usize = 0;
     let mut mut_state = state.to_owned();
     access_redists_aux(

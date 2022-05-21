@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{Error, Result};
-use crate::layout::IRQ_BASE;
-use hypervisor::kvm::kvm_bindings::{
+use crate::kvm::kvm_bindings::{
     kvm_device_attr, KVM_DEV_ARM_VGIC_GRP_DIST_REGS, KVM_DEV_ARM_VGIC_GRP_NR_IRQS,
 };
+use crate::Device;
 use std::sync::Arc;
 
 /*
@@ -77,12 +77,7 @@ static VGIC_DIST_REGS: &[DistReg] = &[
     VGIC_DIST_REG!(GICD_IPRIORITYR, 8, 0),
 ];
 
-fn dist_attr_access(
-    gic: &Arc<dyn hypervisor::Device>,
-    offset: u32,
-    val: &u32,
-    set: bool,
-) -> Result<()> {
+fn dist_attr_access(gic: &Arc<dyn Device>, offset: u32, val: &u32, set: bool) -> Result<()> {
     let mut gic_dist_attr = kvm_device_attr {
         group: KVM_DEV_ARM_VGIC_GRP_DIST_REGS,
         attr: offset as u64,
@@ -100,18 +95,18 @@ fn dist_attr_access(
 }
 
 /// Get the distributor control register.
-pub fn read_ctlr(gic: &Arc<dyn hypervisor::Device>) -> Result<u32> {
+pub fn read_ctlr(gic: &Arc<dyn Device>) -> Result<u32> {
     let val: u32 = 0;
     dist_attr_access(gic, GICD_CTLR, &val, false)?;
     Ok(val)
 }
 
 /// Set the distributor control register.
-pub fn write_ctlr(gic: &Arc<dyn hypervisor::Device>, val: u32) -> Result<()> {
+pub fn write_ctlr(gic: &Arc<dyn Device>, val: u32) -> Result<()> {
     dist_attr_access(gic, GICD_CTLR, &val, true)
 }
 
-fn get_interrupts_num(gic: &Arc<dyn hypervisor::Device>) -> Result<u32> {
+fn get_interrupts_num(gic: &Arc<dyn Device>) -> Result<u32> {
     let num_irq = 0;
 
     let mut nr_irqs_attr = kvm_device_attr {
@@ -125,7 +120,7 @@ fn get_interrupts_num(gic: &Arc<dyn hypervisor::Device>) -> Result<u32> {
     Ok(num_irq)
 }
 
-fn compute_reg_len(gic: &Arc<dyn hypervisor::Device>, reg: &DistReg, base: u32) -> Result<u32> {
+fn compute_reg_len(gic: &Arc<dyn Device>, reg: &DistReg, base: u32) -> Result<u32> {
     let mut end = base;
     let num_irq = get_interrupts_num(gic)?;
     if reg.length > 0 {
@@ -147,7 +142,7 @@ fn compute_reg_len(gic: &Arc<dyn hypervisor::Device>, reg: &DistReg, base: u32) 
 }
 
 /// Set distributor registers of the GIC.
-pub fn set_dist_regs(gic: &Arc<dyn hypervisor::Device>, state: &[u32]) -> Result<()> {
+pub fn set_dist_regs(gic: &Arc<dyn Device>, state: &[u32]) -> Result<()> {
     let mut idx = 0;
 
     for dreg in VGIC_DIST_REGS {
@@ -164,7 +159,7 @@ pub fn set_dist_regs(gic: &Arc<dyn hypervisor::Device>, state: &[u32]) -> Result
     Ok(())
 }
 /// Get distributor registers of the GIC.
-pub fn get_dist_regs(gic: &Arc<dyn hypervisor::Device>) -> Result<Vec<u32>> {
+pub fn get_dist_regs(gic: &Arc<dyn Device>) -> Result<Vec<u32>> {
     let mut state = Vec::new();
 
     for dreg in VGIC_DIST_REGS {
