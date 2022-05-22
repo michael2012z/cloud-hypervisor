@@ -9,7 +9,7 @@ pub mod redist_regs;
 pub use self::dist_regs::{get_dist_regs, read_ctlr, set_dist_regs, write_ctlr};
 pub use self::icc_regs::{get_icc_regs, set_icc_regs};
 pub use self::redist_regs::{get_redist_regs, set_redist_regs};
-use crate::arch::aarch64::gic::GicDevice;
+use crate::arch::aarch64::gic::Vgic;
 use crate::kvm::kvm_bindings;
 use crate::{CpuState, Device, Vm};
 use gicv3_its::KvmGicV3Its;
@@ -31,26 +31,25 @@ pub enum Error {
 type Result<T> = result::Result<T, Error>;
 
 /// Trait for GIC devices.
-pub trait KvmGicDevice: Send + Sync + GicDevice {
+pub trait KvmGicDevice: Send + Sync + Vgic {
     /// Returns the GIC version of the device
     fn version() -> u32;
 
     /// Create the GIC device object
-    fn create_device(device: Arc<dyn Device>, vcpu_count: u64) -> Box<dyn GicDevice>;
+    fn create_device(device: Arc<dyn Device>, vcpu_count: u64) -> Box<dyn Vgic>;
 
     /// Setup the device-specific attributes
-    fn init_device_attributes(vm: &Arc<dyn Vm>, gic_device: &mut dyn GicDevice) -> Result<()>;
+    fn init_device_attributes(vm: &dyn Vm, gic_device: &mut dyn Vgic) -> Result<()>;
 
     /// Initialize a GIC device
-    fn init_device(vm: &Arc<dyn Vm>) -> Result<Arc<dyn Device>> {
+    fn init_device(vm: &dyn Vm) -> Result<Arc<dyn Device>> {
         let mut gic_device = kvm_bindings::kvm_create_device {
             type_: Self::version(),
             fd: 0,
             flags: 0,
         };
 
-        vm.create_device(&mut gic_device)
-            .map_err(super::Error::CreateGic)
+        vm.create_device(&mut gic_device).map_err(Error::CreateGic)
     }
 
     /// Set a GIC device attribute
@@ -69,7 +68,7 @@ pub trait KvmGicDevice: Send + Sync + GicDevice {
         };
         device
             .set_device_attr(&attr)
-            .map_err(super::Error::SetDeviceAttribute)?;
+            .map_err(Error::SetDeviceAttribute)?;
 
         Ok(())
     }
@@ -90,17 +89,22 @@ pub trait KvmGicDevice: Send + Sync + GicDevice {
         };
         device
             .get_device_attr(&mut attr)
-            .map_err(super::Error::GetDeviceAttribute)?;
+            .map_err(Error::GetDeviceAttribute)?;
 
         Ok(())
     }
 
     /// Finalize the setup of a GIC device
-    fn finalize_device(gic_device: &dyn GicDevice) -> Result<()> {
+    fn finalize_device(gic_device: &dyn Vgic) -> Result<()> {
+        // FIXME:
+        // Redefine some GIC constants to avoid the dependency on `layout` crate.
+        // This is temporary solution, will be fixed in future refactoring.
+        const LAYOUT_IRQ_NUM: u32 = 256;
+
         /* We need to tell the kernel how many irqs to support with this vgic.
          * See the `layout` module for details.
          */
-        let nr_irqs: u32 = layout::IRQ_NUM;
+        let nr_irqs: u32 = LAYOUT_IRQ_NUM;
         let nr_irqs_ptr = &nr_irqs as *const u32;
         Self::set_device_attribute(
             gic_device.device(),
@@ -126,7 +130,7 @@ pub trait KvmGicDevice: Send + Sync + GicDevice {
 
     /// Method to initialize the GIC device
     #[allow(clippy::new_ret_no_self)]
-    fn new(vm: &Arc<dyn Vm>, vcpu_count: u64) -> Result<Box<dyn GicDevice>> {
+    fn new(vm: &dyn Vm, vcpu_count: u64) -> Result<Box<dyn Vgic>> {
         let vgic_fd = Self::init_device(vm)?;
 
         let mut device = Self::create_device(vgic_fd, vcpu_count);
@@ -149,6 +153,6 @@ pub trait KvmGicDevice: Send + Sync + GicDevice {
             flags: 0,
         };
         gic.set_device_attr(&init_gic_attr)
-            .map_err(super::Error::SetDeviceAttribute)
+            .map_err(Error::SetDeviceAttribute)
     }
 }

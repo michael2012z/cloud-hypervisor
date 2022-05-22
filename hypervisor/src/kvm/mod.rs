@@ -9,13 +9,19 @@
 //
 
 #[cfg(target_arch = "aarch64")]
+use crate::aarch64::gic::gicv3_its::KvmGicV3Its;
+#[cfg(target_arch = "aarch64")]
 pub use crate::aarch64::{
-    check_required_kvm_extensions, is_system_register, VcpuInit, VcpuKvmState as CpuState,
-    MPIDR_EL1,
+    check_required_kvm_extensions, gic::gicv3_its::Gicv3ItsState as GicState, is_system_register,
+    VcpuInit, VcpuKvmState as CpuState, MPIDR_EL1,
 };
+#[cfg(target_arch = "aarch64")]
+use crate::arch::aarch64::gic::Vgic;
 use crate::cpu;
 use crate::device;
 use crate::hypervisor;
+#[cfg(target_arch = "aarch64")]
+use crate::kvm::aarch64::gic::KvmGicDevice;
 use crate::vec_with_array_field;
 use crate::vm::{self, InterruptSourceConfig, VmOps};
 #[cfg(target_arch = "aarch64")]
@@ -254,8 +260,9 @@ impl vm::Vm for KvmVm {
     ///
     /// Creates a GIC device.
     ///
-    fn create_vgic(&self, vcpu_count: u64) -> Result<Box<dyn GicDevice>> {
-        KvmGicV3Its::new(vm, vcpu_count)
+    fn create_vgic(&self, vcpu_count: u64) -> vm::Result<Box<dyn Vgic>> {
+        KvmGicV3Its::new(self, vcpu_count)
+            .map_err(|e| vm::HypervisorVmError::CreateVgic(anyhow!("Vgic error {:?}", e)))
     }
     ///
     /// Registers an event to be signaled whenever a certain address is written to.

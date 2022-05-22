@@ -121,6 +121,11 @@ fn get_interrupts_num(gic: &Arc<dyn Device>) -> Result<u32> {
 }
 
 fn compute_reg_len(gic: &Arc<dyn Device>, reg: &DistReg, base: u32) -> Result<u32> {
+    // FIXME:
+    // Redefine some GIC constants to avoid the dependency on `layout` crate.
+    // This is temporary solution, will be fixed in future refactoring.
+    const LAYOUT_IRQ_BASE: u32 = 32;
+
     let mut end = base;
     let num_irq = get_interrupts_num(gic)?;
     if reg.length > 0 {
@@ -133,8 +138,8 @@ fn compute_reg_len(gic: &Arc<dyn Device>, reg: &DistReg, base: u32) -> Result<u3
         // This is the type of register that takes into account the number of interrupts
         // that the model has. It is also the type of register where
         // a register relates to multiple interrupts.
-        end = base + (reg.bpi as u32 * (num_irq - IRQ_BASE) / 8);
-        if reg.bpi as u32 * (num_irq - IRQ_BASE) % 8 > 0 {
+        end = base + (reg.bpi as u32 * (num_irq - LAYOUT_IRQ_BASE) / 8);
+        if reg.bpi as u32 * (num_irq - LAYOUT_IRQ_BASE) % 8 > 0 {
             end += REG_SIZE as u32;
         }
     }

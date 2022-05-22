@@ -4,7 +4,7 @@
 
 use super::{Error, Result};
 use crate::kvm::kvm_bindings::{kvm_device_attr, KVM_DEV_ARM_VGIC_GRP_REDIST_REGS};
-use crate::CpuState;
+use crate::{CpuState, Device};
 use std::sync::Arc;
 
 // Relevant redistributor registers that we want to save/restore.

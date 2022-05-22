@@ -7,17 +7,17 @@
 use super::dist_regs::{get_dist_regs, read_ctlr, set_dist_regs, write_ctlr};
 use super::icc_regs::{get_icc_regs, set_icc_regs};
 use super::redist_regs::{construct_gicr_typers, get_redist_regs, set_redist_regs};
-use super::GicDevice;
 use super::KvmGicDevice;
+use crate::arch::aarch64::gic::{self, HypervisorGicError, Vgic};
 use crate::kvm::kvm_bindings;
+use crate::GicState;
 use crate::{CpuState, Device, Vm};
 use anyhow::anyhow;
+use serde::{Deserialize, Serialize};
 use std::any::Any;
 use std::convert::TryInto;
 use std::sync::Arc;
 use std::{boxed::Box, result};
-use versionize::{VersionMap, Versionize, VersionizeResult};
-use versionize_derive::Versionize;
 use vm_memory::Address;
 
 /// Errors thrown while saving/restoring the GICv3.
@@ -59,7 +59,7 @@ pub struct KvmGicV3 {
     vcpu_count: u64,
 }
 
-#[derive(Versionize)]
+#[derive(Clone, Default, Serialize, Deserialize)]
 pub struct Gicv3State {
     dist: Vec<u32>,
     rdist: Vec<u32>,
@@ -68,20 +68,25 @@ pub struct Gicv3State {
     gicd_ctlr: u32,
 }
 
-impl VersionMapped for Gicv3State {}
-
 impl KvmGicV3 {
+    // FIXME:
+    // Redefine some GIC constants to avoid the dependency on `layout` crate.
+    // This is temporary solution, will be fixed in future refactoring.
+    const LAYOUT_GIC_V3_DIST_START: u64 = 0x0900_0000 - 0x01_0000;
+    const LAYOUT_GIC_V3_DIST_SIZE: u64 = 0x01_0000;
+    const LAYOUT_GIC_V3_REDIST_SIZE: u64 = 0x02_0000;
+
     // Device trees specific constants
     pub const ARCH_GIC_V3_MAINT_IRQ: u32 = 9;
 
     /// Get the address of the GIC distributor.
     pub fn get_dist_addr() -> u64 {
-        layout::GIC_V3_DIST_START.raw_value()
+        KvmGicV3::LAYOUT_GIC_V3_DIST_START
     }
 
     /// Get the size of the GIC distributor.
     pub fn get_dist_size() -> u64 {
-        layout::GIC_V3_DIST_SIZE
+        KvmGicV3::LAYOUT_GIC_V3_DIST_SIZE
     }
 
     /// Get the address of the GIC redistributors.
@@ -91,46 +96,11 @@ impl KvmGicV3 {
 
     /// Get the size of the GIC redistributors.
     pub fn get_redists_size(vcpu_count: u64) -> u64 {
-        vcpu_count * layout::GIC_V3_REDIST_SIZE
-    }
-
-    /// Save the state of GIC.
-    fn state(&self, gicr_typers: &[u64]) -> Result<Gicv3State> {
-        let gicd_ctlr = read_ctlr(self.device()).map_err(Error::SaveDistributorCtrlRegisters)?;
-
-        let dist_state = get_dist_regs(self.device()).map_err(Error::SaveDistributorRegisters)?;
-
-        let rdist_state = get_redist_regs(self.device(), gicr_typers)
-            .map_err(Error::SaveRedistributorRegisters)?;
-
-        let icc_state =
-            get_icc_regs(self.device(), gicr_typers).map_err(Error::SaveIccRegisters)?;
-
-        Ok(Gicv3State {
-            dist: dist_state,
-            rdist: rdist_state,
-            icc: icc_state,
-            gicd_ctlr,
-        })
-    }
-
-    /// Restore the state of GIC.
-    fn set_state(&mut self, gicr_typers: &[u64], state: &Gicv3State) -> Result<()> {
-        write_ctlr(self.device(), state.gicd_ctlr)
-            .map_err(Error::RestoreDistributorCtrlRegisters)?;
-
-        set_dist_regs(self.device(), &state.dist).map_err(Error::RestoreDistributorRegisters)?;
-
-        set_redist_regs(self.device(), gicr_typers, &state.rdist)
-            .map_err(Error::RestoreRedistributorRegisters)?;
-
-        set_icc_regs(self.device(), gicr_typers, &state.icc).map_err(Error::RestoreIccRegisters)?;
-
-        Ok(())
+        vcpu_count * KvmGicV3::LAYOUT_GIC_V3_REDIST_SIZE
     }
 }
 
-impl GicDevice for KvmGicV3 {
+impl Vgic for KvmGicV3 {
     fn device(&self) -> &Arc<dyn Device> {
         &self.device
     }
@@ -161,6 +131,16 @@ impl GicDevice for KvmGicV3 {
     fn as_any_concrete_mut(&mut self) -> &mut dyn Any {
         self
     }
+
+    /// Save the state of GIC.
+    fn state(&self, gicr_typers: &[u64]) -> gic::Result<GicState> {
+        panic!()
+    }
+
+    /// Restore the state of GIC.
+    fn set_state(&mut self, gicr_typers: &[u64], state: &GicState) -> gic::Result<()> {
+        panic!()
+    }
 }
 
 impl KvmGicDevice for KvmGicV3 {
@@ -168,7 +148,7 @@ impl KvmGicDevice for KvmGicV3 {
         kvm_bindings::kvm_device_type_KVM_DEV_TYPE_ARM_VGIC_V3
     }
 
-    fn create_device(device: Arc<dyn Device>, vcpu_count: u64) -> Box<dyn GicDevice> {
+    fn create_device(device: Arc<dyn Device>, vcpu_count: u64) -> Box<dyn Vgic> {
         Box::new(KvmGicV3 {
             device,
             gicr_typers: vec![0; vcpu_count.try_into().unwrap()],
@@ -183,8 +163,8 @@ impl KvmGicDevice for KvmGicV3 {
     }
 
     fn init_device_attributes(
-        _vm: &Arc<dyn Vm>,
-        gic_device: &mut dyn GicDevice,
+        _vm: &dyn Vm,
+        gic_device: &mut dyn Vgic,
     ) -> crate::aarch64::gic::Result<()> {
         /* Setting up the distributor attribute.
          We are placing the GIC below 1GB so we need to substract the size of the distributor.
@@ -211,43 +191,3 @@ impl KvmGicDevice for KvmGicV3 {
         Ok(())
     }
 }
-
-pub const GIC_V3_ITS_SNAPSHOT_ID: &str = "gic-v3-its";
-impl Snapshottable for KvmGicV3Its {
-    fn id(&self) -> String {
-        GIC_V3_ITS_SNAPSHOT_ID.to_string()
-    }
-
-    fn snapshot(&mut self) -> std::result::Result<Snapshot, MigratableError> {
-        let gicr_typers = self.gicr_typers.clone();
-        Snapshot::new_from_versioned_state(&self.id(), &self.state(&gicr_typers).unwrap())
-    }
-
-    fn restore(&mut self, snapshot: Snapshot) -> std::result::Result<(), MigratableError> {
-        let gicr_typers = self.gicr_typers.clone();
-        self.set_state(&gicr_typers, &snapshot.to_versioned_state(&self.id())?)
-            .map_err(|e| {
-                MigratableError::Restore(anyhow!("Could not restore GICv3ITS state {:?}", e))
-            })
-    }
-}
-
-impl Pausable for KvmGicV3Its {
-    fn pause(&mut self) -> std::result::Result<(), MigratableError> {
-        // Flush redistributors pending tables to guest RAM.
-        KvmGicDevice::save_pending_tables(self.device()).map_err(|e| {
-            MigratableError::Pause(anyhow!(
-                "Could not save GICv3ITS GIC pending tables {:?}",
-                e
-            ))
-        })?;
-        // Flush ITS tables to guest RAM.
-        gicv3_its_tables_access(self.its_device().unwrap(), true).map_err(|e| {
-            MigratableError::Pause(anyhow!("Could not save GICv3ITS ITS tables {:?}", e))
-        })?;
-
-        Ok(())
-    }
-}
-impl Transportable for KvmGicV3Its {}
-impl Migratable for KvmGicV3Its {}
