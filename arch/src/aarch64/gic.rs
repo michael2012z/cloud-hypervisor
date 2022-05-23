@@ -1,6 +1,11 @@
 // Copyright 2021 Arm Limited (or its affiliates). All rights reserved.
 
-use hypervisor::arch::aarch64::gic::Vgic;
+use hypervisor::Vgic;
+use std::result;
+use std::sync::Arc;
+use vm_migration::{
+    Migratable, MigratableError, Pausable, Snapshot, Snapshottable, Transportable, VersionMapped,
+};
 
 /// Errors thrown while setting up the GIC.
 #[derive(Debug)]
@@ -12,13 +17,13 @@ type Result<T> = result::Result<T, Error>;
 /// A wrapper around creating and using a hypervisor-agnostic vgic.
 pub struct GicDevice {
     // The hypervisor abstracted GIC.
-    vgic: Arc<dyn Vgic>,
+    vgic: Box<dyn Vgic>,
 }
 
 impl GicDevice {
-    pub fn new(vm: &Arc<dyn hypervisor::Vm>, vcpu_count: u64) -> Result<GicDevice> {
-        let vgic = vm.create_vgic(vcpu_count)?
-        Ok(GicDevice {vgic})
+    pub fn new(vm: &Arc<dyn hypervisor::Vm>, vcpu_count: u64) -> Result<Arc<GicDevice>> {
+        let vgic = vm.create_vgic(vcpu_count).unwrap();
+        Ok(Arc::new(GicDevice { vgic }))
     }
 }
 
@@ -29,7 +34,8 @@ impl Snapshottable for GicDevice {
     }
 
     fn snapshot(&mut self) -> std::result::Result<Snapshot, MigratableError> {
-        let state = self.vgic.state().unwrap();
+        let x: Vec<u64> = vec![];
+        let state = self.vgic.state(&x).unwrap();
         Snapshot::new_from_state(&self.id(), &state)
     }
 

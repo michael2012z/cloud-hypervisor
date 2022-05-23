@@ -15,7 +15,7 @@ pub mod uefi;
 
 pub use self::fdt::DeviceInfoForFdt;
 use crate::{DeviceType, GuestMemoryMmap, NumaNodes, PciSpaceInfo, RegionType};
-use gic::GicDevice;
+use hypervisor::Vgic;
 use log::{log_enabled, Level};
 use std::collections::HashMap;
 use std::convert::TryInto;
@@ -143,7 +143,7 @@ pub fn configure_system<T: DeviceInfoForFdt + Clone + Debug, S: ::std::hash::Bui
     initrd: &Option<super::InitramfsConfig>,
     pci_space_info: &[PciSpaceInfo],
     virtio_iommu_bdf: Option<u32>,
-    gic_device: &dyn GicDevice,
+    gic_device: &dyn Vgic,
     numa_nodes: &NumaNodes,
     pmu_supported: bool,
 ) -> super::Result<()> {

@@ -1170,7 +1170,7 @@ impl Vm {
             .as_ref()
             .map(|(v, _)| *v);
 
-        let gic_device = create_gic(
+        let gic_device = GicDevice::new(
             &self.memory_manager.lock().as_ref().unwrap().vm,
             self.cpu_manager.lock().unwrap().boot_vcpus() as u64,
         )

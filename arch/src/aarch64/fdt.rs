@@ -8,12 +8,14 @@
 
 use crate::{NumaNodes, PciSpaceInfo};
 use byteorder::{BigEndian, ByteOrder};
+use hypervisor::Vgic;
 use std::cmp;
 use std::collections::HashMap;
 use std::ffi::CStr;
 use std::fmt::Debug;
 use std::result;
 use std::str;
+use std::sync::Arc;
 
 use super::super::DeviceType;
 use super::super::GuestMemoryMmap;
@@ -90,7 +92,7 @@ pub fn create_fdt<T: DeviceInfoForFdt + Clone + Debug, S: ::std::hash::BuildHash
     vcpu_mpidr: Vec<u64>,
     vcpu_topology: Option<(u8, u8, u8)>,
     device_info: &HashMap<(DeviceType, String), T, S>,
-    gic_device: &dyn GicDevice,
+    gic_device: &dyn Vgic,
     initrd: &Option<InitramfsConfig>,
     pci_space_info: &[PciSpaceInfo],
     numa_nodes: &NumaNodes,
@@ -315,7 +317,7 @@ fn create_chosen_node(
     Ok(())
 }
 
-fn create_gic_node(fdt: &mut FdtWriter, gic_device: &dyn GicDevice) -> FdtWriterResult<()> {
+fn create_gic_node(fdt: &mut FdtWriter, gic_device: &dyn Vgic) -> FdtWriterResult<()> {
     let gic_reg_prop = gic_device.device_properties();
 
     let intc_node = fdt.begin_node("intc")?;
