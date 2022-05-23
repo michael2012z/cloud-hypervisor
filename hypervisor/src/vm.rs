@@ -10,10 +10,10 @@
 
 #[cfg(target_arch = "aarch64")]
 use crate::aarch64::VcpuInit;
-#[cfg(target_arch = "aarch64")]
-use crate::arch::aarch64::gic::Vgic;
 use crate::cpu::Vcpu;
 use crate::device::Device;
+#[cfg(target_arch = "aarch64")]
+use crate::gic::Vgic;
 #[cfg(feature = "kvm")]
 use crate::kvm::KvmVmState as VmState;
 #[cfg(feature = "mshv")]

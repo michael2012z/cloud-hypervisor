@@ -8,7 +8,7 @@ use super::dist_regs::{get_dist_regs, read_ctlr, set_dist_regs, write_ctlr};
 use super::icc_regs::{get_icc_regs, set_icc_regs};
 use super::redist_regs::{construct_gicr_typers, get_redist_regs, set_redist_regs};
 use super::KvmGicDevice;
-use crate::arch::aarch64::gic::{self, HypervisorGicError, Vgic};
+use crate::gic::{self, HypervisorGicError, Vgic};
 use crate::kvm::kvm_bindings;
 use crate::GicState;
 use crate::{CpuState, Device, Vm};

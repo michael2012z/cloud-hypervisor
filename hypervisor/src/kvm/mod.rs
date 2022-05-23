@@ -15,10 +15,10 @@ pub use crate::aarch64::{
     check_required_kvm_extensions, gic::gicv3_its::Gicv3ItsState as GicState, is_system_register,
     VcpuInit, VcpuKvmState as CpuState, MPIDR_EL1,
 };
-#[cfg(target_arch = "aarch64")]
-use crate::arch::aarch64::gic::Vgic;
 use crate::cpu;
 use crate::device;
+#[cfg(target_arch = "aarch64")]
+use crate::gic;
 use crate::hypervisor;
 #[cfg(target_arch = "aarch64")]
 use crate::kvm::aarch64::gic::KvmGicDevice;
@@ -260,7 +260,7 @@ impl vm::Vm for KvmVm {
     ///
     /// Creates a GIC device.
     ///
-    fn create_vgic(&self, vcpu_count: u64) -> vm::Result<Box<dyn Vgic>> {
+    fn create_vgic(&self, vcpu_count: u64) -> vm::Result<Box<dyn gic::Vgic>> {
         KvmGicV3Its::new(self, vcpu_count)
             .map_err(|e| vm::HypervisorVmError::CreateVgic(anyhow!("Vgic error {:?}", e)))
     }
