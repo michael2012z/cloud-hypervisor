@@ -1,6 +1,6 @@
 // Copyright 2021 Arm Limited (or its affiliates). All rights reserved.
 
-use hypervisor::Vgic;
+use hypervisor::{CpuState, Vgic};
 use std::result;
 use std::sync::Arc;
 use vm_migration::{
@@ -21,9 +21,15 @@ pub struct GicDevice {
 }
 
 impl GicDevice {
-    pub fn new(vm: &Arc<dyn hypervisor::Vm>, vcpu_count: u64) -> Result<Arc<GicDevice>> {
+    pub fn new(vm: &Arc<dyn hypervisor::Vm>, vcpu_count: u64) -> Result<GicDevice> {
         let vgic = vm.create_vgic(vcpu_count).unwrap();
-        Ok(Arc::new(GicDevice { vgic }))
+        Ok(GicDevice { vgic })
+    }
+
+    pub fn set_gicr_typers(&mut self, vcpu_states: &[CpuState]) {}
+
+    pub fn get_vgic(&self) -> &dyn Vgic {
+        &*self.vgic
     }
 }
 

@@ -143,7 +143,7 @@ pub fn configure_system<T: DeviceInfoForFdt + Clone + Debug, S: ::std::hash::Bui
     initrd: &Option<super::InitramfsConfig>,
     pci_space_info: &[PciSpaceInfo],
     virtio_iommu_bdf: Option<u32>,
-    gic_device: &dyn Vgic,
+    gic_device: &gic::GicDevice,
     numa_nodes: &NumaNodes,
     pmu_supported: bool,
 ) -> super::Result<()> {
@@ -153,7 +153,7 @@ pub fn configure_system<T: DeviceInfoForFdt + Clone + Debug, S: ::std::hash::Bui
         vcpu_mpidr,
         vcpu_topology,
         device_info,
-        gic_device,
+        gic_device.get_vgic(),
         initrd,
         pci_space_info,
         numa_nodes,
