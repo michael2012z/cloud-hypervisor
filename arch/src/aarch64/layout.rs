@@ -121,6 +121,9 @@ pub const KERNEL_START: GuestAddress = GuestAddress(ACPI_START.0 + ACPI_MAX_SIZE
 /// Pci high memory base
 pub const PCI_HIGH_BASE: GuestAddress = GuestAddress(0x2_0000_0000);
 
+// First possible location of the SMBIOS entry.
+pub const SMBIOS_START: u64 = 0xf0000;
+
 // As per virt/kvm/arm/vgic/vgic-kvm-device.c we need
 // the number of interrupts our GIC will support to be:
 // * bigger than 32

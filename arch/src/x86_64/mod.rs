@@ -12,6 +12,7 @@ pub mod layout;
 mod mpspec;
 mod mptable;
 pub mod regs;
+use crate::smbios;
 use crate::GuestMemoryMmap;
 use crate::InitramfsConfig;
 use crate::RegionType;
@@ -21,14 +22,13 @@ use linux_loader::loader::bootparam::boot_params;
 use linux_loader::loader::elf::start_info::{
     hvm_memmap_table_entry, hvm_modlist_entry, hvm_start_info,
 };
+use std::arch::x86_64;
 use std::collections::BTreeMap;
 use std::mem;
 use vm_memory::{
     Address, ByteValued, Bytes, GuestAddress, GuestAddressSpace, GuestMemory, GuestMemoryAtomic,
     GuestMemoryRegion, GuestUsize,
 };
-mod smbios;
-use std::arch::x86_64;
 #[cfg(feature = "tdx")]
 pub mod tdx;
 

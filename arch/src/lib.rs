@@ -13,6 +13,7 @@ extern crate log;
 #[cfg(target_arch = "x86_64")]
 use crate::x86_64::SgxEpcSection;
 use serde::{Deserialize, Serialize};
+mod smbios;
 use std::collections::BTreeMap;
 use std::fmt;
 use std::result;

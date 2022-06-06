@@ -1212,8 +1212,19 @@ impl Vm {
                 ))
             })?;
 
+        let uefi_flash = self.device_manager.lock().as_ref().unwrap().uefi_flash();
+        let uefi_flash = uefi_flash.memory();
+        let serial_number = self
+            .config
+            .lock()
+            .unwrap()
+            .platform
+            .as_ref()
+            .and_then(|p| p.serial_number.clone());
+
         arch::configure_system(
             &mem,
+            &uefi_flash,
             cmdline.as_str(),
             vcpu_mpidrs,
             vcpu_topology,
@@ -1224,6 +1235,7 @@ impl Vm {
             &vgic,
             &self.numa_nodes,
             pmu_supported,
+            serial_number.as_deref(),
         )
         .map_err(Error::ConfigureSystem)?;
 

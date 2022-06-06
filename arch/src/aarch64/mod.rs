@@ -12,6 +12,7 @@ pub mod regs;
 pub mod uefi;
 
 pub use self::fdt::DeviceInfoForFdt;
+use crate::smbios;
 use crate::{DeviceType, GuestMemoryMmap, NumaNodes, PciSpaceInfo, RegionType};
 use hypervisor::arch::aarch64::gic::Vgic;
 use log::{log_enabled, Level};
@@ -44,6 +45,9 @@ pub enum Error {
 
     /// Error initializing PMU for vcpu
     VcpuInitPmu,
+
+    /// Error setting up SMBIOS table
+    SmbiosSetup(smbios::Error),
 }
 
 impl From<Error> for super::Error {
@@ -134,6 +138,7 @@ pub fn arch_memory_regions(size: GuestUsize) -> Vec<(GuestAddress, usize, Region
 #[allow(clippy::too_many_arguments)]
 pub fn configure_system<T: DeviceInfoForFdt + Clone + Debug, S: ::std::hash::BuildHasher>(
     guest_mem: &GuestMemoryMmap,
+    uefi_flash: &GuestMemoryMmap,
     cmdline: &str,
     vcpu_mpidr: Vec<u64>,
     vcpu_topology: Option<(u8, u8, u8)>,
@@ -144,6 +149,7 @@ pub fn configure_system<T: DeviceInfoForFdt + Clone + Debug, S: ::std::hash::Bui
     gic_device: &Arc<Mutex<dyn Vgic>>,
     numa_nodes: &NumaNodes,
     pmu_supported: bool,
+    serial_number: Option<&str>,
 ) -> super::Result<()> {
     let fdt_final = fdt::create_fdt(
         guest_mem,
@@ -165,6 +171,7 @@ pub fn configure_system<T: DeviceInfoForFdt + Clone + Debug, S: ::std::hash::Bui
     }
 
     fdt::write_fdt_to_memory(fdt_final, guest_mem).map_err(Error::WriteFdtToMemory)?;
+    let _ = smbios::setup_smbios(uefi_flash, serial_number).map_err(Error::SmbiosSetup)?;
 
     Ok(())
 }
