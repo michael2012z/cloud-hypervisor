@@ -291,7 +291,6 @@ pub struct Vcpu {
     #[cfg(target_arch = "aarch64")]
     mpidr: u64,
     saved_state: Option<CpuState>,
-    configured: bool,
 }
 
 impl Vcpu {
@@ -317,7 +316,6 @@ impl Vcpu {
             #[cfg(target_arch = "aarch64")]
             mpidr: 0,
             saved_state: None,
-            configured: false,
         })
     }
 
@@ -765,8 +763,6 @@ impl CpuManager {
                 .expect("Failed to configure vCPU");
         }
 
-        vcpu.configured = true;
-
         Ok(())
     }
 
@@ -793,8 +789,9 @@ impl CpuManager {
     }
 
     pub fn configure_vcpus(&mut self, entry_point: Option<EntryPoint>) -> Result<()> {
+        // A VCPU is locked when running, in that case it should not be configured.
         for vcpu in self.vcpus.clone() {
-            if vcpu.lock().unwrap().configured {
+            if vcpu.try_lock().is_err() {
                 continue;
             }
             self.configure_vcpu(vcpu, entry_point, None)?;
