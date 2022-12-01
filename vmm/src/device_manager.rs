@@ -1193,7 +1193,6 @@ impl DeviceManager {
                 .try_clone()
                 .map_err(DeviceManagerError::EventFd)?,
         )?;
-
         #[cfg(target_arch = "aarch64")]
         self.add_legacy_devices(&legacy_interrupt_manager)?;
 
@@ -1369,39 +1368,43 @@ impl DeviceManager {
     ) -> DeviceManagerResult<Arc<Mutex<dyn InterruptController>>> {
         let id = String::from(gic::GIC_SNAPSHOT_ID);
 
-        let (vgic_state, saved_vcpu_states) =
-            if let Some(vgic_snapshot) = snapshot_from_id(self.snapshot.as_ref(), &id) {
-                if self
-                    .cpu_manager
-                    .lock()
-                    .unwrap()
-                    .init_pmu(arch::aarch64::fdt::AARCH64_PMU_IRQ + 16)
-                    .is_err()
-                {
-                    info!("Failed to initialize PMU");
-                }
-
-                let vgic_state = vgic_snapshot
-                    .to_state(&id)
-                    .map_err(DeviceManagerError::RestoreGetState)?;
-                let saved_vcpu_states = Some(self.cpu_manager.lock().unwrap().get_saved_states());
-                (vgic_state, saved_vcpu_states)
-            } else {
-                (None, None)
-            };
-
         let interrupt_controller: Arc<Mutex<gic::Gic>> = Arc::new(Mutex::new(
             gic::Gic::new(
                 self.config.lock().unwrap().cpus.boot_vcpus,
                 Arc::clone(&self.msi_interrupt_manager),
                 self.address_manager.vm.clone(),
-                vgic_state,
-                saved_vcpu_states,
+                None,
+                None,
             )
             .map_err(DeviceManagerError::CreateInterruptController)?,
         ));
 
         self.interrupt_controller = Some(interrupt_controller.clone());
+
+        if let Some(vgic_snapshot) = snapshot_from_id(self.snapshot.as_ref(), &id) {
+            // Now we are in a restoring process
+            if self
+                .cpu_manager
+                .lock()
+                .unwrap()
+                .init_pmu(arch::aarch64::fdt::AARCH64_PMU_IRQ + 16)
+                .is_err()
+            {
+                info!("Failed to initialize PMU");
+            }
+
+            let vgic_state = vgic_snapshot
+                .to_state(&id)
+                .map_err(DeviceManagerError::RestoreGetState)?;
+            let saved_vcpu_states = Some(self.cpu_manager.lock().unwrap().get_saved_states());
+            self.interrupt_controller
+                .clone()
+                .unwrap()
+                .lock()
+                .unwrap()
+                .tmp_restore(vgic_state, saved_vcpu_states)
+                .unwrap();
+        }
 
         self.device_tree
             .lock()

@@ -43,8 +43,8 @@ impl Gic {
         vcpu_count: u8,
         interrupt_manager: Arc<dyn InterruptManager<GroupConfig = MsiIrqGroupConfig>>,
         vm: Arc<dyn hypervisor::Vm>,
-        state: Option<GicState>,
-        saved_vcpu_states: Option<Vec<CpuState>>,
+        _state: Option<GicState>,
+        _saved_vcpu_states: Option<Vec<CpuState>>,
     ) -> Result<Gic> {
         let interrupt_source_group = interrupt_manager
             .create_group(MsiIrqGroupConfig {
@@ -57,24 +57,31 @@ impl Gic {
             .create_vgic(Gic::create_default_config(vcpu_count as u64))
             .map_err(Error::CreateGic)?;
 
-        let mut gic = Gic {
+        let gic = Gic {
             interrupt_source_group,
             vgic: Some(vgic.clone()),
         };
         gic.enable()?;
 
-        if let Some(saved_vcpu_states) = saved_vcpu_states {
-            gic.set_gicr_typers(&saved_vcpu_states);
-        }
-
-        if let Some(state) = state {
-            vgic.lock()
-                .unwrap()
-                .set_state(&state)
-                .map_err(Error::RestoreGic)?;
-        }
-
         Ok(gic)
+    }
+
+    pub fn tmp_restore(
+        &mut self,
+        state: Option<GicState>,
+        saved_vcpu_states: Option<Vec<CpuState>>,
+    ) -> Result<()> {
+        let saved_vcpu_states = saved_vcpu_states.unwrap();
+        self.set_gicr_typers(&saved_vcpu_states);
+        let state = state.unwrap();
+        self.vgic
+            .clone()
+            .unwrap()
+            .lock()
+            .unwrap()
+            .set_state(&state)
+            .unwrap();
+        Ok(())
     }
 
     fn enable(&self) -> Result<()> {
