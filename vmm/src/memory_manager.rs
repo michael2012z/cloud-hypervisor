@@ -146,6 +146,7 @@ struct GuestRamMapping {
     zone_id: String,
     virtio_mem: bool,
     file_offset: u64,
+    host_addr: u64,
 }
 
 #[derive(Clone, Serialize, Deserialize, Versionize)]
@@ -815,6 +816,7 @@ impl MemoryManager {
                     zone_id: zone_id.clone(),
                     virtio_mem,
                     file_offset,
+                    host_addr: region.as_ptr() as u64,
                 });
                 self.ram_allocator
                     .allocate(Some(region.start_addr()), region.len(), None)
@@ -1479,6 +1481,7 @@ impl MemoryManager {
             zone_id: DEFAULT_MEMORY_ZONE.to_string(),
             virtio_mem: false,
             file_offset: 0,
+            host_addr: region.as_ptr() as u64,
         });
 
         self.add_region(Arc::clone(&region))?;
