@@ -140,7 +140,7 @@ pub type MemoryZones = HashMap<String, MemoryZone>;
 
 #[derive(Clone, Serialize, Deserialize, Versionize)]
 struct GuestRamMapping {
-    slot: u32,
+    slot: Option<u32>,
     gpa: u64,
     size: u64,
     zone_id: String,
@@ -579,7 +579,7 @@ impl MemoryManager {
                         zone_config.hugepages,
                         zone_config.hugepage_size,
                         zone_config.host_numa_node,
-                        existing_memory_files.remove(&guest_ram_mapping.slot),
+                        existing_memory_files.remove(&guest_ram_mapping.slot.unwrap()),
                         thp,
                     )?;
                     memory_regions.push(Arc::clone(&region));
@@ -812,7 +812,7 @@ impl MemoryManager {
                 self.guest_ram_mappings.push(GuestRamMapping {
                     gpa: region.start_addr().raw_value(),
                     size: region.len(),
-                    slot,
+                    slot: Some(slot),
                     zone_id: zone_id.clone(),
                     virtio_mem,
                     file_offset,
@@ -1477,7 +1477,7 @@ impl MemoryManager {
         self.guest_ram_mappings.push(GuestRamMapping {
             gpa: region.start_addr().raw_value(),
             size: region.len(),
-            slot,
+            slot: Some(slot),
             zone_id: DEFAULT_MEMORY_ZONE.to_string(),
             virtio_mem: false,
             file_offset: 0,
@@ -1954,7 +1954,10 @@ impl MemoryManager {
     pub fn memory_slot_fds(&self) -> HashMap<u32, RawFd> {
         let mut memory_slot_fds = HashMap::new();
         for guest_ram_mapping in &self.guest_ram_mappings {
-            let slot = guest_ram_mapping.slot;
+            // It it safe to unwrap because this function is only invoked
+            // in the case when we are trying to migrate an already running VM.
+            // For an already running VM it is safe to assume that the slots exists.
+            let slot = guest_ram_mapping.slot.unwrap();
             let guest_memory = self.guest_memory.memory();
             let file = guest_memory
                 .find_region(GuestAddress(guest_ram_mapping.gpa))
@@ -2546,9 +2549,12 @@ impl Migratable for MemoryManager {
     fn dirty_log(&mut self) -> std::result::Result<MemoryRangeTable, MigratableError> {
         let mut table = MemoryRangeTable::default();
         for r in &self.guest_ram_mappings {
-            let vm_dirty_bitmap = self.vm.get_dirty_log(r.slot, r.gpa, r.size).map_err(|e| {
-                MigratableError::MigrateSend(anyhow!("Error getting VM dirty log {}", e))
-            })?;
+            let vm_dirty_bitmap = self
+                .vm
+                .get_dirty_log(r.slot.unwrap(), r.gpa, r.size)
+                .map_err(|e| {
+                    MigratableError::MigrateSend(anyhow!("Error getting VM dirty log {}", e))
+                })?;
             let vmm_dirty_bitmap = match self.guest_memory.memory().find_region(GuestAddress(r.gpa))
             {
                 Some(region) => {
