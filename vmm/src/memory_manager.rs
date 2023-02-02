@@ -825,15 +825,6 @@ impl MemoryManager {
 
         for (zone_id, regions) in list {
             for (region, virtio_mem) in regions {
-                let slot = self.create_userspace_mapping(
-                    region.start_addr().raw_value(),
-                    region.len(),
-                    region.as_ptr() as u64,
-                    self.mergeable,
-                    false,
-                    self.log_dirty,
-                )?;
-
                 let file_offset = if let Some(file_offset) = region.file_offset() {
                     file_offset.start()
                 } else {
@@ -843,7 +834,7 @@ impl MemoryManager {
                 self.guest_ram_mappings.push(GuestRamMapping {
                     gpa: region.start_addr().raw_value(),
                     size: region.len(),
-                    slot: Some(slot),
+                    slot: None,
                     zone_id: zone_id.clone(),
                     virtio_mem,
                     file_offset,
