@@ -774,6 +774,37 @@ impl MemoryManager {
         }
     }
 
+    pub fn create_userspace_mappings(&mut self) -> Result<(), Error> {
+        let mut slots = Vec::new();
+
+        for i in 0..self.guest_ram_mappings.len() {
+            let guest_ram_mapping = self.guest_ram_mappings.get(i).unwrap();
+            // We should only create userspace mappings for which we haven't created previously.
+            if guest_ram_mapping.slot.is_some() {
+                continue;
+            }
+
+            let slot = self.create_userspace_mapping(
+                guest_ram_mapping.gpa,
+                guest_ram_mapping.size,
+                guest_ram_mapping.host_addr,
+                self.mergeable,
+                false,
+                self.log_dirty,
+            )?;
+
+            slots.push(slot);
+        }
+
+        // We need to seperate the process of updating the slot and creating userspace mapping
+        // to avoid double mutable borrow.
+        for (i, slot) in slots.iter().enumerate().take(self.guest_ram_mappings.len()) {
+            self.guest_ram_mappings[i].slot = Some(*slot);
+        }
+
+        Ok(())
+    }
+
     fn allocate_address_space(&mut self) -> Result<(), Error> {
         let mut list = Vec::new();
 
