@@ -594,6 +594,17 @@ impl Vm {
         )
         .map_err(Error::DeviceManager)?;
 
+        if snapshot.is_some() {
+            // Note: Always call this function before invoking start restored vcpus.
+            // Otherwise guest would fail to boot because we haven't created the
+            // userspace mappings to update the hypervisor about the memory mappings.
+            memory_manager
+                .lock()
+                .unwrap()
+                .create_userspace_mappings()
+                .map_err(Error::MemoryManager)?;
+        }
+
         device_manager
             .lock()
             .unwrap()
@@ -2141,15 +2152,6 @@ impl Vm {
 
     pub fn restore(&mut self) -> Result<()> {
         event!("vm", "restoring");
-
-        // Note: Always call this function before invoking start restored vcpus.
-        // Otherwise guest would fail to boot because we haven't created the
-        // userspace mappings to update the hypervisor about the memory mappings.
-        self.memory_manager
-            .lock()
-            .unwrap()
-            .create_userspace_mappings()
-            .map_err(Error::MemoryManager)?;
 
         // Now we can start all vCPUs from here.
         self.cpu_manager
